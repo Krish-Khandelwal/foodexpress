@@ -1,83 +1,86 @@
-import React, { useContext, useState } from 'react';
-import { X, Plus, Minus, Trash2, ShoppingBag, MapPin } from 'lucide-react';
-import { CartContext } from '../../context/CartContext';
-import { AuthContext } from '../../context/AuthContext';
-import api from '../../api/axios';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useCart } from '../../context/CartContext'; // Adjust path if needed
 
-const CartDrawer = ({ isOpen, onClose }) => {
-  const { cartItems, updateQuantity, removeFromCart, cartTotal, clearCart } = useContext(CartContext);
-  const { user } = useContext(AuthContext);
-  const [isProcessing, setIsProcessing] = useState(false);
+export default function CartDrawer({ isOpen, onClose }) {
+  // 1. FIXED: Added a default empty array to cart so it is never undefined
+  const { cart = [], removeFromCart, cartTotal } = useCart();
+  const navigate = useNavigate();
 
-  const deliveryFee = cartTotal > 0 ? 40 : 0;
-  const taxes = cartTotal > 0 ? Math.round(cartTotal * 0.05) : 0;
-  const finalTotal = cartTotal + deliveryFee + taxes;
+  if (!isOpen) return null;
 
-  const handleCheckout = async () => {
-    setIsProcessing(true);
-    try {
-      // Mocking successful checkout logic without Razorpay
-      const orderPayload = {
-        shopId: cartItems[0]?.shopId || '60d21b4667d0d8992e610c85',
-        items: cartItems,
-        totalAmount: finalTotal,
-        deliveryAddress: { street: 'Uttam Nagar East', lat: 28.6189, lng: 77.0544 }
-      };
-      const { data } = await api.post('/orders', orderPayload);
-      alert(`TEST PAYMENT SUCCESSFUL! Order ID: ${data.order._id}`);
-      clearCart();
-      window.location.href = `/track-order/${data.order._id}`;
-    } catch (error) {
-      console.error('Checkout Error:', error);
-      alert('Error placing order.');
-      setIsProcessing(false);
-    }
+  const handleCheckout = () => {
+    onClose();
+    navigate('/checkout'); // Ensure you have a checkout route in App.jsx
   };
 
   return (
-    <>
-      <div className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`} onClick={onClose} />
-      <div className={`fixed inset-y-0 right-0 w-full max-w-md bg-white shadow-2xl z-50 transform transition-transform duration-300 flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-        <div className="flex items-center justify-between p-5 border-b border-gray-200">
-          <h2 className="text-xl font-bold flex items-center gap-2"><ShoppingBag size={24} className="text-blue-600" /> Your Order</h2>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full"><X size={24} /></button>
+    <div className="fixed inset-0 z-50 flex justify-end bg-black bg-opacity-50 transition-opacity">
+      <div className="w-full max-w-sm bg-white h-full shadow-2xl flex flex-col">
+        
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b">
+          <h2 className="text-xl font-bold text-gray-800">Your Cart</h2>
+          <button onClick={onClose} className="text-2xl font-bold text-gray-600 hover:text-red-500">
+            ✕
+          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 bg-gray-50">
-          {cartItems.length === 0 ? (
-            <div className="text-center text-gray-500 mt-20">Cart is empty</div>
+        {/* Cart Items List */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {/* 2. FIXED: Using optional chaining cart?.length just to be extra safe */}
+          {cart?.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <span className="text-4xl mb-3">🛒</span>
+              <p>Your cart is empty.</p>
+            </div>
           ) : (
-            cartItems.map((item) => (
-              <div key={item._id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-4 flex-col">
-                <div className="flex justify-between">
-                  <h3 className="font-semibold text-gray-800">{item.name}</h3>
-                  <button onClick={() => removeFromCart(item._id)} className="text-gray-400 hover:text-red-500"><Trash2 size={18} /></button>
+            <div className="space-y-4">
+              {cart.map((item, index) => (
+                <div key={index} className="flex justify-between items-center border-b pb-3">
+                  <div className="flex items-center gap-3">
+                    <img 
+                      src={item.image || 'https://via.placeholder.com/60'} 
+                      alt={item.name} 
+                      className="w-12 h-12 object-cover rounded"
+                    />
+                    <div>
+                      <p className="font-semibold text-sm text-gray-800">{item.name}</p>
+                      <p className="text-xs text-gray-500">₹{item.price} x {item.quantity}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="font-bold text-gray-800">₹{item.price * item.quantity}</span>
+                    <button 
+                      onClick={() => removeFromCart(item.menuItem)} 
+                      className="text-red-500 text-xs font-bold hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
-                <p className="text-gray-600 font-medium mt-1">₹{item.price}</p>
-                <div className="flex items-center gap-3 mt-3 bg-gray-50 w-fit rounded-lg border border-gray-200 p-1">
-                  <button onClick={() => updateQuantity(item._id, -1)} className="p-1 text-gray-600"><Minus size={16} /></button>
-                  <span className="w-6 text-center font-semibold text-sm">{item.quantity}</span>
-                  <button onClick={() => updateQuantity(item._id, 1)} className="p-1 text-gray-600"><Plus size={16} /></button>
-                </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
 
-        {cartItems.length > 0 && (
-          <div className="p-5 bg-white border-t border-gray-200">
-            <div className="space-y-2 text-sm text-gray-600 mb-4">
-              <div className="flex justify-between"><span>Subtotal</span><span className="font-medium text-gray-800">₹{cartTotal}</span></div>
-              <div className="flex justify-between"><span>Taxes</span><span className="font-medium text-gray-800">₹{taxes}</span></div>
-              <div className="flex justify-between"><span>Delivery</span><span className="font-medium text-gray-800">₹{deliveryFee}</span></div>
+        {/* Footer / Checkout Button */}
+        {cart?.length > 0 && (
+          <div className="p-4 border-t bg-gray-50 shadow-inner">
+            <div className="flex justify-between font-bold text-xl mb-4 text-gray-800">
+              <span>Total:</span>
+              <span className="text-orange-600">₹{cartTotal}</span>
             </div>
-            <button onClick={handleCheckout} disabled={isProcessing} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl hover:bg-blue-700">
-              {isProcessing ? 'Processing...' : `Pay ₹${finalTotal}`}
+            <button 
+              onClick={handleCheckout} 
+              className="w-full py-3 bg-orange-600 text-white font-bold rounded-lg hover:bg-orange-700 shadow transition"
+            >
+              Proceed to Checkout
             </button>
           </div>
         )}
+        
       </div>
-    </>
+    </div>
   );
-};
-export default CartDrawer;
+}

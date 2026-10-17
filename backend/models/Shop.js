@@ -1,14 +1,17 @@
 import mongoose from 'mongoose';
 
-const shopSchema = new mongoose.Schema({
-  ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  shopName: { type: String, required: true },
-  address: { type: String, required: true },
-  location: { lat: { type: Number, required: true }, lng: { type: Number, required: true } },
-  imageUrl: { type: String },
-  approvalStatus: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'], default: 'PENDING' },
-  isOpen: { type: Boolean, default: false }
-}, { timestamps: true });
+const shopSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    description: { type: String, default: '' },
+    address: { type: String, required: true },
+    phone: { type: String, default: '' },
+    cuisine: { type: String, default: 'Multi-Cuisine' },
+    image: { type: String, default: '' },
+    owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    isOpen: { type: Boolean, default: true },
+  },
+  { timestamps: true }
+);
 
-const Shop = mongoose.model('Shop', shopSchema);
-export default Shop;
+export default mongoose.model('Shop', shopSchema);

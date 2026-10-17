@@ -1,34 +1,26 @@
 import mongoose from 'mongoose';
 
-const menuItemSchema = new mongoose.Schema({
-  shopId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Shop',
-    required: true
+const menuItemSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    description: { type: String, default: '' },
+    price: { type: Number, required: true },
+    category: { type: String, default: 'Main Course' },
+    image: { type: String, default: '' },
+    imageUrl: { type: String, default: '' },
+    isAvailable: { type: Boolean, default: true },
+    isVeg: { type: Boolean, default: true },
+    shop: { type: mongoose.Schema.Types.ObjectId, ref: 'Shop', required: true },
   },
-  name: {
-    type: String,
-    required: true
-  },
-  description: {
-    type: String
-  },
-  price: {
-    type: Number,
-    required: true
-  },
-  category: {
-    type: String,
-    enum: ['VEG', 'NON_VEG', 'BEVERAGE', 'DESSERT']
-  },
-  imageUrl: {
-    type: String
-  },
-  isAvailable: {
-    type: Boolean,
-    default: true
-  }
-}, { timestamps: true });
+  { timestamps: true }
+);
 
-const MenuItem = mongoose.model('MenuItem', menuItemSchema);
-export default MenuItem;
+menuItemSchema.pre('save', function () {
+  if (this.isModified('image')) {
+    this.imageUrl = this.image;
+  } else if (this.isModified('imageUrl')) {
+    this.image = this.imageUrl;
+  }
+});
+
+export default mongoose.model('MenuItem', menuItemSchema);

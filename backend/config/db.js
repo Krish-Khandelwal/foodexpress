@@ -1,22 +1,12 @@
 import mongoose from 'mongoose';
 
 const connectDB = async () => {
-  const primaryUri = process.env.MONGO_URI;
-  const fallbackUri = 'mongodb://127.0.0.1:27017/quickbite';
-
   try {
-    const conn = await mongoose.connect(primaryUri, { serverSelectionTimeoutMS: 4000 });
-    console.log(`MongoDB Connected (Atlas): ${conn.connection.host}`);
-  } catch (primaryErr) {
-    console.warn(`Primary MongoDB Atlas connection failed (${primaryErr.message}).`);
-    console.log(`Falling back to local MongoDB at 127.0.0.1:27017...`);
-    try {
-      const conn = await mongoose.connect(fallbackUri, { serverSelectionTimeoutMS: 4000 });
-      console.log(`MongoDB Connected (Local): ${conn.connection.host}`);
-    } catch (fallbackErr) {
-      console.error(`MongoDB connection failed: ${fallbackErr.message}`);
-      process.exit(1);
-    }
+    const conn = await mongoose.connect(process.env.MONGO_URI);
+    console.log(`MongoDB Connected: ${conn.connection.host}`);
+  } catch (error) {
+    console.error(`MongoDB connection error: ${error.message}`);
+    process.exit(1);
   }
 };
 

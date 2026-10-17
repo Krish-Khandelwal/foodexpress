@@ -1,28 +1,37 @@
 import mongoose from 'mongoose';
 
-const orderSchema = new mongoose.Schema({
-  customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  shopId: { type: mongoose.Schema.Types.ObjectId, ref: 'Shop', required: true },
-  deliveryBoyId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-  items: [{
-    menuItem: { type: mongoose.Schema.Types.ObjectId, ref: 'MenuItem' },
-    name: { type: String },
-    quantity: { type: Number, required: true },
-    price: { type: Number, required: true }
-  }],
-  totalAmount: { type: Number, required: true },
-  deliveryAddress: { street: String, lat: Number, lng: Number },
-  status: { 
-    type: String, 
-    enum: ['PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'], 
-    default: 'PENDING' 
+const orderSchema = new mongoose.Schema(
+  {
+    customer: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    shop: { type: mongoose.Schema.Types.ObjectId, ref: 'Shop', required: true },
+    rider: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    items: [
+      {
+        menuItem: { type: mongoose.Schema.Types.ObjectId, ref: 'MenuItem' },
+        name: String,
+        price: Number,
+        quantity: { type: Number, default: 1 },
+        image: String,
+      },
+    ],
+    totalAmount: { type: Number, required: true },
+    deliveryAddress: { type: String, required: true },
+    status: {
+      type: String,
+      enum: ['pending', 'preparing', 'ready', 'out for delivery', 'delivered', 'cancelled'],
+      default: 'pending',
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['pending', 'paid', 'failed'],
+      default: 'pending',
+    },
+    razorpayOrderId: { type: String, default: '' },
+    razorpayPaymentId: { type: String, default: '' },
+    riderOtp: { type: String, default: '' },
+    customerOtp: { type: String, default: '' },
   },
-  paymentDetails: {
-    razorpayOrderId: { type: String },
-    razorpayPaymentId: { type: String },
-    paymentStatus: { type: String, enum: ['PENDING', 'PAID', 'FAILED'], default: 'PENDING' }
-  }
-}, { timestamps: true });
+  { timestamps: true }
+);
 
-const Order = mongoose.model('Order', orderSchema);
-export default Order;
+export default mongoose.model('Order', orderSchema);

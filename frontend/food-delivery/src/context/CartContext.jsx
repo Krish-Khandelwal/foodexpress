@@ -1,41 +1,53 @@
-import React, { createContext, useState, useMemo } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 
+// 1. Create the context (Added 'export' here to fix the Navbar error)
 export const CartContext = createContext();
 
-export const CartProvider = ({ children }) => {
-  const [cartItems, setCartItems] = useState([]);
+// 2. Create the custom hook and export it as a named export
+export const useCart = () => {
+  const context = useContext(CartContext);
+  if (!context) {
+    throw new Error('useCart must be used within a CartProvider');
+  }
+  return context;
+};
 
+// 3. Create the Provider component
+export const CartProvider = ({ children }) => {
+  const [cart, setCart] = useState([]);
+
+  // Add item to cart or update quantity if it already exists
   const addToCart = (item) => {
-    setCartItems((prev) => {
-      const existing = prev.find((i) => i._id === item._id);
-      if (existing) {
-        return prev.map((i) => i._id === item._id ? { ...i, quantity: i.quantity + 1 } : i);
+    setCart((prevCart) => {
+      const existingItemIndex = prevCart.findIndex((i) => i.menuItem === item.menuItem);
+      
+      if (existingItemIndex > -1) {
+        // Item exists, update its quantity
+        const newCart = [...prevCart];
+        newCart[existingItemIndex].quantity += item.quantity || 1;
+        return newCart;
       }
-      return [...prev, { ...item, quantity: 1 }];
+      
+      // New item, add to cart
+      return [...prevCart, { ...item, quantity: item.quantity || 1 }];
     });
   };
 
-  const removeFromCart = (itemId) => {
-    setCartItems((prev) => prev.filter((i) => i._id !== itemId));
+  // Remove item from cart
+  const removeFromCart = (menuItemId) => {
+    setCart((prevCart) => prevCart.filter((item) => item.menuItem !== menuItemId));
   };
 
-  const updateQuantity = (itemId, amount) => {
-    setCartItems((prev) => 
-      prev.map((i) => {
-        if (i._id === itemId) return { ...i, quantity: Math.max(0, i.quantity + amount) };
-        return i;
-      }).filter((i) => i.quantity > 0)
-    );
+  // Clear cart after successful checkout
+  const clearCart = () => {
+    setCart([]);
   };
 
-  const clearCart = () => setCartItems([]);
-
-  const cartTotal = useMemo(() => {
-    return cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
-  }, [cartItems]);
+  // Calculate total price
+  const cartTotal = cart.reduce((total, item) => total + item.price * item.quantity, 0);
 
   return (
-    <CartContext.Provider value={{ cartItems, addToCart, removeFromCart, updateQuantity, clearCart, cartTotal }}>
+    <CartContext.Provider value={{ cart, addToCart, removeFromCart, clearCart, cartTotal }}>
       {children}
     </CartContext.Provider>
   );

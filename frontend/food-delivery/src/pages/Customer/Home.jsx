@@ -1,101 +1,74 @@
-import React, { useState, useEffect, useContext } from 'react';
-import { Utensils } from 'lucide-react';
-import { CartContext } from '../../context/CartContext';
-import api from '../../api/axios';
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+import { useCart } from '../../context/CartContext'; // Adjust path if needed
 
-const Home = ({ toggleCart }) => {
-  const [shops, setShops] = useState([]);
-  const [selectedShopMenu, setSelectedShopMenu] = useState([]);
-  const [activeShop, setActiveShop] = useState(null);
-  const { addToCart } = useContext(CartContext);
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+export default function Home() {
+  const [menuItems, setMenuItems] = useState([]);
+  const { addToCart } = useCart(); // Assuming you have a cart context
 
   useEffect(() => {
-    const fetchShops = async () => {
+    const fetchMenu = async () => {
       try {
-        const { data } = await api.get('/menu/shops');
-        setShops(data);
+        const { data } = await axios.get(`${API_BASE}/menu`);
+        setMenuItems(data);
       } catch (err) {
-        console.error("Error fetching shops", err);
+        console.error('Failed to load menu:', err);
       }
     };
-    fetchShops();
+    fetchMenu();
   }, []);
 
-  const loadMenu = async (shop) => {
-    setActiveShop(shop);
-    try {
-      const { data } = await api.get(`/menu/shops/${shop._id}/menu`);
-      setSelectedShopMenu(data);
-    } catch (err) {
-      console.error("Error fetching menu", err);
-    }
+  const handleAddToCart = (item) => {
+    addToCart({
+      menuItem: item._id,
+      name: item.name,
+      price: item.price,
+      // Fix: Ensure we grab either image or imageUrl properly
+      image: item.image || item.imageUrl || '',
+      quantity: 1,
+      shopId: item.shop?._id
+    });
+    alert(`${item.name} added to cart!`);
   };
 
   return (
-    <div className="max-w-6xl mx-auto p-4 sm:p-6">
-      {!activeShop ? (
-        <>
-          <h1 className="text-3xl font-bold mb-8">What are you craving?</h1>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {shops.map((shop) => (
-              <div key={shop._id} onClick={() => loadMenu(shop)} className="bg-white rounded-xl shadow-sm border p-4 cursor-pointer hover:shadow-md transition">
-                <h3 className="text-xl font-bold">{shop.shopName}</h3>
-                <p className="text-sm text-gray-500 mt-1">{shop.address}</p>
-              </div>
-            ))}
-          </div>
-        </>
+    <div className="max-w-6xl mx-auto p-6">
+      <h1 className="text-3xl font-bold mb-8 text-center text-orange-600">Welcome to FoodExpress</h1>
+      
+      {menuItems.length === 0 ? (
+        <p className="text-center text-gray-500 text-lg mt-10">Loading delicious food...</p>
       ) : (
-        <div>
-          <button onClick={() => setActiveShop(null)} className="text-blue-600 font-medium mb-4 hover:underline">&larr; Back to Restaurants</button>
-          <h2 className="text-2xl font-bold mb-6">{activeShop.shopName} - Menu</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {selectedShopMenu.map((item) => (
-              <div key={item._id} className="bg-white p-4 rounded-xl shadow-sm border flex justify-between items-center gap-4 hover:shadow-md transition">
-                <div className="flex items-center gap-3.5 min-w-0">
-                  {item.imageUrl ? (
-                    <img 
-                      src={item.imageUrl} 
-                      alt={item.name} 
-                      className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl border border-gray-200 flex-shrink-0"
-                      onError={(e) => { e.target.style.display = 'none'; }}
-                    />
-                  ) : (
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 flex-shrink-0">
-                      <Utensils size={24} />
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                        item.category === 'NON_VEG' 
-                          ? 'bg-red-500' 
-                          : item.category === 'BEVERAGE' 
-                            ? 'bg-blue-500' 
-                            : item.category === 'DESSERT' 
-                              ? 'bg-amber-500' 
-                              : 'bg-green-500'
-                      }`} />
-                      <h4 className="font-bold text-gray-900 truncate">{item.name}</h4>
-                    </div>
-                    {item.description && (
-                      <p className="text-xs text-gray-500 line-clamp-1 mb-1">{item.description}</p>
-                    )}
-                    <p className="font-bold text-gray-900">₹{item.price}</p>
-                  </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          {menuItems.map((item) => (
+            <div key={item._id} className="border rounded-xl shadow-md overflow-hidden bg-white hover:shadow-lg transition">
+              {/* Fix: Display image using both property names to catch Cloudinary URLs */}
+              <img
+                src={item.image || item.imageUrl || 'https://via.placeholder.com/300x200?text=FoodExpress'}
+                alt={item.name}
+                className="w-full h-48 object-cover"
+              />
+              <div className="p-4">
+                <h3 className="font-bold text-lg mb-1">{item.name}</h3>
+                <p className="text-sm text-gray-600 h-10 overflow-hidden">{item.description}</p>
+                <div className="mt-4 flex justify-between items-center">
+                  <span className="font-bold text-lg">₹{item.price}</span>
+                  <button 
+                    onClick={() => handleAddToCart(item)}
+                    className="bg-orange-600 text-white px-4 py-2 rounded font-semibold hover:bg-orange-700"
+                  >
+                    Add
+                  </button>
                 </div>
-                <button 
-                  onClick={() => addToCart({ ...item, shopId: activeShop._id })} 
-                  className="bg-blue-50 text-blue-600 font-bold px-4 py-2 rounded-lg border border-blue-200 hover:bg-blue-600 hover:text-white transition cursor-pointer flex-shrink-0"
-                >
-                  ADD
-                </button>
+                <div className="mt-3 pt-3 border-t text-xs text-gray-500">
+                  From: {item.shop?.name || 'FoodExpress Restaurant'}
+                </div>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
   );
-};
-export default Home;
+}

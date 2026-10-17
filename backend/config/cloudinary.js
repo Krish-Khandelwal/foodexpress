@@ -1,24 +1,27 @@
 import { v2 as cloudinary } from 'cloudinary';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-/**
- * Upload a base64 image string to Cloudinary.
- * @param {string} base64Image - Data URL (e.g. "data:image/jpeg;base64,...")
- * @returns {Promise<string>} - The secure Cloudinary URL
- */
-export const uploadImage = async (base64Image) => {
-  const result = await cloudinary.uploader.upload(base64Image, {
-    folder: 'quickbite/menu',
-    transformation: [
-      { width: 800, height: 800, crop: 'limit', quality: 'auto', fetch_format: 'auto' }
-    ]
+export const uploadToCloudinary = async (fileStrOrBuffer) => {
+  if (!fileStrOrBuffer) return '';
+  
+  // If already a remote http/https URL, return as-is
+  if (typeof fileStrOrBuffer === 'string' && fileStrOrBuffer.startsWith('http')) {
+    return fileStrOrBuffer;
+  }
+  
+  const result = await cloudinary.uploader.upload(fileStrOrBuffer, {
+    folder: 'FoodExpress',
   });
+  
   return result.secure_url;
 };
 
-export default cloudinary;
+export { cloudinary };

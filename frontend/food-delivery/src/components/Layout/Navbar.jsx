@@ -18,11 +18,8 @@ const Navbar = ({ toggleCart }) => {
     <nav className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
-          <Link to="/" className="flex items-center gap-2">
-            <span className="text-2xl font-black text-blue-600 tracking-tighter">QuickBite</span>
-            {user && user.role !== 'USER' && (
-              <span className="bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded">{user.role}</span>
-            )}
+          <Link to="/" className="text-2xl font-black text-orange-600 tracking-tight">
+            FoodExpress
           </Link>
           <div className="flex items-center gap-4">
             {user ? (
@@ -43,7 +40,7 @@ const Navbar = ({ toggleCart }) => {
                 </div>
               </>
             ) : (
-              <Link to="/login" className="bg-blue-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-blue-700">Login</Link>
+              <Link to="/login" className="bg-orange-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-orange-700">Login</Link>
             )}
           </div>
         </div>

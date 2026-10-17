@@ -1,12 +1,18 @@
 import express from 'express';
-import { getPendingVendors, updateVendorStatus } from '../controllers/adminController.js';
-import { protect, restrictTo } from '../middleware/roleMiddleware.js';
+import { protect } from '../middleware/authMiddleware.js';
+import { 
+  getPendingVendors, 
+  updateVendorStatus, 
+  getDashboardStats, 
+  createAdmin 
+} from '../controllers/adminController.js';
 
 const router = express.Router();
 
-router.use(protect, restrictTo('ADMIN'));
-
-router.get('/vendors/pending', getPendingVendors);
-router.put('/vendors/:shopId/status', updateVendorStatus);
+// You can add an 'admin' middleware next to 'protect' if you have created one
+router.get('/pending-vendors', protect, getPendingVendors);
+router.put('/vendor-status/:id', protect, updateVendorStatus);
+router.get('/stats', protect, getDashboardStats);
+router.post('/init', createAdmin);
 
 export default router;
