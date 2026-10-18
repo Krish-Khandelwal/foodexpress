@@ -1,5 +1,6 @@
 import React, { useState, useContext } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { ShieldCheck } from 'lucide-react';
 import { AuthContext } from '../../context/AuthContext';
 import api from '../../api/axios';
 
@@ -26,6 +27,30 @@ const Login = () => {
       else navigate('/');
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Instant 1-Click Admin Init & Login
+  const handleQuickAdminLogin = async () => {
+    setError('');
+    setSubmitting(true);
+    try {
+      await api.post('/admin/init', {
+        name: 'FoodExpress Admin',
+        email: 'admin@foodexpress.com',
+        password: 'Admin@123',
+        phone: '9999999999',
+      });
+      const { data } = await api.post('/auth/login', {
+        email: 'admin@foodexpress.com',
+        password: 'Admin@123',
+      });
+      login(data);
+      navigate('/admin-dashboard');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to initialize Admin login');
     } finally {
       setSubmitting(false);
     }
@@ -66,15 +91,28 @@ const Login = () => {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full bg-orange-600 text-white font-bold py-3 rounded-lg hover:bg-orange-700 transition cursor-pointer shadow-sm disabled:opacity-50"
+            className="w-full bg-orange-600 text-white font-bold py-3 rounded-lg hover:bg-orange-700 transition cursor-pointer shadow-xs disabled:opacity-50"
           >
             {submitting ? 'Signing in...' : 'Login'}
           </button>
         </form>
+
+        <div className="mt-5 pt-4 border-t border-gray-100">
+          <button
+            type="button"
+            onClick={handleQuickAdminLogin}
+            disabled={submitting}
+            className="w-full py-2.5 px-4 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold rounded-lg flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50"
+          >
+            <ShieldCheck size={18} />
+            <span>Instant Admin Login (admin@foodexpress.com)</span>
+          </button>
+        </div>
+
         <p className="text-center mt-6 text-sm text-gray-600">
           Don't have an account?{' '}
           <Link to="/register" className="text-orange-600 font-semibold hover:underline">
-            Register
+            Register (Customer / Owner / Rider / Admin)
           </Link>
         </p>
       </div>

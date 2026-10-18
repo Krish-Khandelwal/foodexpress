@@ -1,11 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
+import { io } from 'socket.io-client';
 import api from '../../api/axios';
+import LocationMap from '../../components/Maps/LocationMap';
+
+const SOCKET_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(
+  '/api',
+  ''
+);
 
 export default function TrackOrder() {
   const { id } = useParams();
   const [order, setOrder] = useState(null);
   const [allOrders, setAllOrders] = useState([]);
+  const [liveRiderCoords, setLiveRiderCoords] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -14,12 +23,20 @@ export default function TrackOrder() {
       try {
         if (id && id !== 'latest') {
           const { data } = await api.get(`/orders/${id}`);
-          setOrder(data.order || data);
+          const ord = data.order || data;
+          setOrder(ord);
+          if (ord?.riderLocation?.lat) {
+            setLiveRiderCoords(ord.riderLocation);
+          }
         } else {
           const { data } = await api.get('/orders/my-orders');
           if (Array.isArray(data)) {
             setAllOrders(data);
-            setOrder(data[0] || null);
+            const first = data[0] || null;
+            setOrder(first);
+            if (first?.riderLocation?.lat) {
+              setLiveRiderCoords(first.riderLocation);
+            }
           }
         }
         setError('');
@@ -34,6 +51,19 @@ export default function TrackOrder() {
     const interval = setInterval(fetchOrder, 5000);
     return () => clearInterval(interval);
   }, [id]);
+
+  // Connect to Socket.IO room for real-time rider GPS updates
+  useEffect(() => {
+    if (!order?._id) return;
+    const socket = io(SOCKET_URL);
+    socket.emit('joinOrderRoom', order._id);
+    socket.on('updateLocation', (coords) => {
+      if (coords?.lat && coords?.lng) {
+        setLiveRiderCoords({ lat: coords.lat, lng: coords.lng });
+      }
+    });
+    return () => socket.disconnect();
+  }, [order?._id]);
 
   if (loading) {
     return (
@@ -55,20 +85,60 @@ export default function TrackOrder() {
           to="/"
           className="inline-block px-6 py-2.5 bg-orange-600 text-white font-bold rounded-lg hover:bg-orange-700"
         >
-          Order Food Now
+          ← Back to Home
         </Link>
       </div>
     );
   }
 
+  const shopLocation = order.shop?.location || { lat: 28.6139, lng: 77.209 };
+  const customerLocation = order.customerLocation || { lat: 28.625, lng: 77.215 };
+  const riderLocation =
+    liveRiderCoords ||
+    (order.riderLocation?.lat ? order.riderLocation : null) ||
+    (order.rider ? { lat: shopLocation.lat + 0.003, lng: shopLocation.lng + 0.003 } : null);
+
   return (
-    <div className="max-w-3xl mx-auto my-8 px-4 space-y-6">
-      <div className="p-6 bg-white border rounded-xl shadow-md">
+    <div className="max-w-4xl mx-auto my-6 px-4 space-y-6">
+      {/* Top Bar with Back to Home Button */}
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-800">Track Your Order</h1>
+        <Link
+          to="/"
+          className="flex items-center gap-1.5 px-4 py-2 bg-white border rounded-lg text-sm font-bold text-orange-600 hover:bg-orange-50 shadow-2xs"
+        >
+          <ArrowLeft size={16} />
+          <span>Back to Home</span>
+        </Link>
+      </div>
+
+      {/* Live Map Tracking Card */}
+      <div className="p-5 bg-white border rounded-xl shadow-xs">
+        <div className="flex flex-wrap justify-between items-center mb-3 gap-2">
+          <h3 className="font-bold text-gray-800 text-lg">Live Delivery Map</h3>
+          <div className="flex gap-4 text-xs font-semibold text-gray-600">
+            <span>🏪 Restaurant</span>
+            <span>🛵 Delivery Rider</span>
+            <span>🏠 Your Address</span>
+          </div>
+        </div>
+        <div className="h-80 w-full">
+          <LocationMap
+            shopLocation={shopLocation}
+            customerLocation={customerLocation}
+            riderLocation={riderLocation}
+            shopName={order.shop?.name || 'Restaurant'}
+            customerName={order.deliveryAddress || 'Your Delivery Address'}
+            riderName={order.rider ? `Rider: ${order.rider.name}` : 'Rider'}
+          />
+        </div>
+      </div>
+
+      {/* Order Status & OTP Details */}
+      <div className="p-6 bg-white border rounded-xl shadow-xs">
         <div className="flex justify-between items-center border-b pb-4">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800">
-              Order #{order._id?.slice(-6)}
-            </h2>
+            <h2 className="text-2xl font-bold text-gray-800">Order #{order._id?.slice(-6)}</h2>
             <p className="text-xs text-gray-500 mt-0.5">
               Restaurant: {order.shop?.name || 'FoodExpress'} • Address: {order.deliveryAddress}
             </p>
@@ -80,7 +150,7 @@ export default function TrackOrder() {
 
         {/* Customer Delivery OTP UI */}
         {order.status !== 'delivered' && order.customerOtp && (
-          <div className="my-6 p-5 bg-green-50 border-2 border-green-200 rounded-lg text-center shadow-xs">
+          <div className="my-6 p-5 bg-green-50 border-2 border-green-200 rounded-lg text-center">
             <p className="text-sm text-green-800 font-medium mb-1">
               Share this Delivery OTP with your Rider when receiving your food:
             </p>
@@ -90,10 +160,14 @@ export default function TrackOrder() {
           </div>
         )}
 
-        {order.rider && (
+        {order.rider ? (
           <div className="my-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
             <p className="font-semibold text-blue-900">Assigned Rider: {order.rider.name}</p>
             <p className="text-sm text-blue-800">Phone: {order.rider.phone}</p>
+          </div>
+        ) : (
+          <div className="my-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200 text-sm text-yellow-800">
+            Waiting for a delivery rider to be assigned...
           </div>
         )}
 
@@ -104,15 +178,13 @@ export default function TrackOrder() {
               <img
                 src={item.image || 'https://placehold.co/60x60?text=Food'}
                 alt={item.name}
-                className="w-16 h-16 object-cover rounded shadow-xs"
+                className="w-16 h-16 object-cover rounded"
               />
               <div className="flex-1">
                 <p className="font-bold text-gray-800">{item.name}</p>
                 <p className="text-sm text-gray-600">Qty: {item.quantity}</p>
               </div>
-              <div className="font-bold text-lg text-gray-800">
-                ₹{item.price * item.quantity}
-              </div>
+              <div className="font-bold text-lg text-gray-800">₹{item.price * item.quantity}</div>
             </div>
           ))}
         </div>
@@ -123,7 +195,7 @@ export default function TrackOrder() {
         </div>
       </div>
 
-      {/* Previous Orders Selector if viewing /track-order/latest */}
+      {/* Previous Orders Selector */}
       {allOrders.length > 1 && (
         <div className="p-6 bg-white border rounded-xl shadow-xs">
           <h3 className="font-bold text-gray-800 mb-3">All Your Orders</h3>
@@ -131,7 +203,10 @@ export default function TrackOrder() {
             {allOrders.map((o) => (
               <button
                 key={o._id}
-                onClick={() => setOrder(o)}
+                onClick={() => {
+                  setOrder(o);
+                  setLiveRiderCoords(o.riderLocation?.lat ? o.riderLocation : null);
+                }}
                 className={`w-full text-left p-3 rounded-lg border flex justify-between items-center transition cursor-pointer ${
                   o._id === order._id ? 'border-orange-500 bg-orange-50' : 'hover:bg-gray-50'
                 }`}

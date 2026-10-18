@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import api from '../../api/axios';
 
 export default function ManageMenu() {
@@ -11,6 +13,7 @@ export default function ManageMenu() {
     price: '',
     category: 'Main Course',
     image: '',
+    isVeg: true,
     isAvailable: true,
   });
 
@@ -37,6 +40,19 @@ export default function ManageMenu() {
     reader.readAsDataURL(file);
   };
 
+  const resetForm = () => {
+    setEditingItem(null);
+    setFoodForm({
+      name: '',
+      description: '',
+      price: '',
+      category: 'Main Course',
+      image: '',
+      isVeg: true,
+      isAvailable: true,
+    });
+  };
+
   const handleSaveFood = async (e) => {
     e.preventDefault();
     setUploading(true);
@@ -48,15 +64,7 @@ export default function ManageMenu() {
         await api.post('/menu', foodForm);
         alert('Food item uploaded & saved!');
       }
-      setEditingItem(null);
-      setFoodForm({
-        name: '',
-        description: '',
-        price: '',
-        category: 'Main Course',
-        image: '',
-        isAvailable: true,
-      });
+      resetForm();
       fetchMenu();
     } catch (err) {
       alert(err.response?.data?.message || 'Error saving food item');
@@ -73,6 +81,7 @@ export default function ManageMenu() {
       price: item.price,
       category: item.category || 'Main Course',
       image: item.image || item.imageUrl || '',
+      isVeg: item.isVeg !== undefined ? Boolean(item.isVeg) : true,
       isAvailable: item.isAvailable ?? true,
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -90,10 +99,19 @@ export default function ManageMenu() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      <h2 className="text-2xl font-bold mb-4">Manage Menu Items</h2>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">Manage Menu Items</h2>
+        <Link
+          to="/owner-dashboard"
+          className="flex items-center gap-1.5 text-sm font-semibold text-orange-600 hover:underline"
+        >
+          <ArrowLeft size={16} />
+          <span>Back to Dashboard</span>
+        </Link>
+      </div>
 
-      <form onSubmit={handleSaveFood} className="bg-white p-6 rounded-lg shadow-xs mb-8 border">
-        <h3 className="text-lg font-semibold mb-4">
+      <form onSubmit={handleSaveFood} className="bg-white p-6 rounded-xl shadow-xs mb-8 border">
+        <h3 className="text-lg font-bold text-gray-800 mb-4">
           {editingItem ? `Edit Food Item: ${editingItem.name}` : 'Add New Food Item'}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -123,12 +141,44 @@ export default function ManageMenu() {
             onChange={(e) => setFoodForm({ ...foodForm, category: e.target.value })}
           />
 
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleFileChange}
-            className="p-2 border rounded-lg bg-white"
-          />
+          {/* Veg / Non-Veg Selection */}
+          <div className="flex items-center gap-4 p-2.5 border rounded-lg bg-gray-50">
+            <span className="text-sm font-semibold text-gray-700">Food Type:</span>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="isVeg"
+                checked={foodForm.isVeg === true}
+                onChange={() => setFoodForm({ ...foodForm, isVeg: true })}
+              />
+              <span className="text-sm font-bold text-green-700 flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-green-600 inline-block" /> Veg
+              </span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="isVeg"
+                checked={foodForm.isVeg === false}
+                onChange={() => setFoodForm({ ...foodForm, isVeg: false })}
+              />
+              <span className="text-sm font-bold text-red-600 flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-600 inline-block" /> Non-Veg
+              </span>
+            </label>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-xs font-semibold text-gray-600 mb-1">
+              Food Image (Optional)
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleFileChange}
+              className="w-full p-2 border rounded-lg bg-white text-sm"
+            />
+          </div>
         </div>
 
         <textarea
@@ -154,24 +204,14 @@ export default function ManageMenu() {
           <button
             type="submit"
             disabled={uploading}
-            className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 cursor-pointer"
+            className="px-5 py-2.5 bg-orange-600 text-white font-semibold rounded-lg hover:bg-orange-700 disabled:opacity-50 cursor-pointer"
           >
             {uploading ? 'Saving...' : editingItem ? 'Update Food Item' : 'Add Food Item'}
           </button>
           {editingItem && (
             <button
               type="button"
-              onClick={() => {
-                setEditingItem(null);
-                setFoodForm({
-                  name: '',
-                  description: '',
-                  price: '',
-                  category: 'Main Course',
-                  image: '',
-                  isAvailable: true,
-                });
-              }}
+              onClick={resetForm}
               className="px-4 py-2 bg-gray-200 rounded-lg cursor-pointer"
             >
               Cancel Edit
@@ -180,23 +220,35 @@ export default function ManageMenu() {
         </div>
       </form>
 
+      <h3 className="text-xl font-bold text-gray-800 mb-4">Your Menu ({menuItems.length})</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
         {menuItems.map((item) => (
           <div
             key={item._id}
-            className="border rounded-lg p-4 shadow-xs bg-white flex flex-col justify-between"
+            className="border rounded-xl p-4 shadow-xs bg-white flex flex-col justify-between"
           >
             <div>
-              <img
-                src={
-                  item.image ||
-                  item.imageUrl ||
-                  'https://placehold.co/300x180?text=No+Image'
-                }
-                alt={item.name}
-                className="w-full h-40 object-cover rounded mb-3"
-              />
-              <h4 className="font-bold text-lg">{item.name}</h4>
+              <div className="relative">
+                <img
+                  src={
+                    item.image ||
+                    item.imageUrl ||
+                    'https://placehold.co/300x180?text=No+Image'
+                  }
+                  alt={item.name}
+                  className="w-full h-40 object-cover rounded-lg mb-3"
+                />
+                <span
+                  className={`absolute top-2 left-2 px-2.5 py-0.5 rounded-full text-xs font-bold shadow-xs ${
+                    item.isVeg === false
+                      ? 'bg-red-100 text-red-700 border border-red-300'
+                      : 'bg-green-100 text-green-800 border border-green-300'
+                  }`}
+                >
+                  {item.isVeg === false ? '● Non-Veg' : '● Veg'}
+                </span>
+              </div>
+              <h4 className="font-bold text-lg text-gray-800">{item.name}</h4>
               <p className="text-sm text-gray-600">{item.description}</p>
               <p className="mt-2 font-semibold text-orange-600">
                 ₹{item.price} • {item.category}
@@ -205,13 +257,13 @@ export default function ManageMenu() {
             <div className="flex gap-2 mt-4">
               <button
                 onClick={() => startEditFood(item)}
-                className="flex-1 py-1.5 bg-blue-600 text-white rounded text-sm cursor-pointer"
+                className="flex-1 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-semibold cursor-pointer"
               >
                 Edit
               </button>
               <button
                 onClick={() => handleDeleteFood(item._id)}
-                className="py-1.5 px-3 bg-red-100 text-red-600 rounded text-sm cursor-pointer"
+                className="py-1.5 px-3 bg-red-100 text-red-600 rounded-lg text-sm font-semibold cursor-pointer"
               >
                 Delete
               </button>

@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
 import Shop from '../models/Shop.js';
-import { uploadToCloudinary } from '../config/cloudinary.js';
 
 const generateToken = (id, role) => {
   const secret = process.env.JWT_SECRET || 'fallback_jwt_secret_foodexpress';
@@ -22,7 +22,7 @@ export const registerUser = async (req, res) => {
       shopPhone,
       shopDescription,
       shopCuisine,
-      shopImage,
+      shopLocation,
     } = req.body;
 
     if (!name || !email || !password) {
@@ -30,12 +30,14 @@ export const registerUser = async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const userExists = await User.findOne({ email: normalizedEmail });
+    const userExists = await User.findOne({ email: normalizedEmail }).lean();
     if (userExists) {
       return res.status(400).json({ message: 'User already exists with this email' });
     }
 
-    const normalizedRole = (role || 'customer').toLowerCase();
+    const normalizedRole = ['customer', 'owner', 'rider', 'admin'].includes(role?.toLowerCase())
+      ? role.toLowerCase()
+      : 'customer';
 
     const user = await User.create({
       name: name.trim(),
@@ -47,17 +49,16 @@ export const registerUser = async (req, res) => {
 
     let shop = null;
     if (user.role === 'owner') {
-      let uploadedShopImg = '';
-      if (shopImage) {
-        uploadedShopImg = await uploadToCloudinary(shopImage);
-      }
       shop = await Shop.create({
         name: shopName || `${user.name}'s Restaurant`,
-        address: shopAddress || 'Main Street',
+        address: shopAddress || 'Connaught Place, New Delhi',
         phone: shopPhone || phone || '',
         description: shopDescription || '',
         cuisine: shopCuisine || 'Multi-Cuisine',
-        image: uploadedShopImg,
+        location: {
+          lat: Number(shopLocation?.lat) || 28.6139,
+          lng: Number(shopLocation?.lng) || 77.209,
+        },
         owner: user._id,
         status: 'approved',
       });
@@ -77,7 +78,7 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// POST /api/auth/login
+// POST /api/auth/login (Optimized with .lean() and lightweight payload for fast response)
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -85,14 +86,19 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ message: 'Please provide email and password' });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
-    if (!user || !(await user.matchPassword(password))) {
+    const user = await User.findOne({ email: email.toLowerCase().trim() }).lean();
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
     let shop = null;
     if (user.role === 'owner') {
-      shop = await Shop.findOne({ owner: user._id });
+      shop = await Shop.findOne({ owner: user._id }).select('-image').lean();
     }
 
     return res.json({
@@ -131,7 +137,7 @@ export const googleAuth = async (req, res) => {
 
     let shop = null;
     if (user.role === 'owner') {
-      shop = await Shop.findOne({ owner: user._id });
+      shop = await Shop.findOne({ owner: user._id }).select('-image').lean();
     }
 
     return res.status(200).json({
@@ -151,7 +157,7 @@ export const googleAuth = async (req, res) => {
 // GET /api/auth/my-shop
 export const getMyShop = async (req, res) => {
   try {
-    const shop = await Shop.findOne({ owner: req.user._id });
+    const shop = await Shop.findOne({ owner: req.user._id }).select('-image').lean();
     return res.json(shop);
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -161,13 +167,8 @@ export const getMyShop = async (req, res) => {
 // PUT /api/auth/my-shop
 export const upsertMyShop = async (req, res) => {
   try {
-    const { name, address, phone, description, cuisine, image, isOpen } = req.body;
+    const { name, address, phone, description, cuisine, isOpen, location } = req.body;
     let shop = await Shop.findOne({ owner: req.user._id });
-
-    let uploadedImg = shop ? shop.image : '';
-    if (image && image !== uploadedImg) {
-      uploadedImg = await uploadToCloudinary(image);
-    }
 
     if (shop) {
       shop.name = name ?? shop.name;
@@ -175,7 +176,12 @@ export const upsertMyShop = async (req, res) => {
       shop.phone = phone ?? shop.phone;
       shop.description = description ?? shop.description;
       shop.cuisine = cuisine ?? shop.cuisine;
-      shop.image = uploadedImg;
+      if (location?.lat && location?.lng) {
+        shop.location = {
+          lat: Number(location.lat),
+          lng: Number(location.lng),
+        };
+      }
       if (typeof isOpen === 'boolean') shop.isOpen = isOpen;
       await shop.save();
     } else {
@@ -185,7 +191,10 @@ export const upsertMyShop = async (req, res) => {
         phone: phone || req.user.phone || '',
         description: description || '',
         cuisine: cuisine || 'Multi-Cuisine',
-        image: uploadedImg,
+        location: {
+          lat: Number(location?.lat) || 28.6139,
+          lng: Number(location?.lng) || 77.209,
+        },
         owner: req.user._id,
         status: 'approved',
       });

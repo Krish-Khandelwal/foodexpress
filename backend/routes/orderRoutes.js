@@ -9,6 +9,7 @@ import {
   getOrderById,
   updateOrderStatusByOwner,
   acceptDeliveryByRider,
+  updateRiderLocation,
   verifyPickupOtpByOwner,
   verifyDeliveryOtpByRider,
 } from '../controllers/orderController.js';
@@ -23,6 +24,7 @@ router.get('/rider/available', protect, getRiderOrders);
 router.get('/:id', protect, getOrderById);
 router.put('/:id/status', protect, updateOrderStatusByOwner);
 router.put('/:id/accept-delivery', protect, acceptDeliveryByRider);
+router.put('/:id/rider-location', protect, updateRiderLocation);
 router.post('/:id/verify-pickup-otp', protect, verifyPickupOtpByOwner);
 router.post('/:id/verify-delivery-otp', protect, verifyDeliveryOtpByRider);
 

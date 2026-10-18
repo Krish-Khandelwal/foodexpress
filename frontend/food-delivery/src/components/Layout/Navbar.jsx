@@ -1,6 +1,14 @@
 import React, { useContext } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { ShoppingBag, LogOut, Package, Store, Truck, ShieldCheck } from 'lucide-react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import {
+  ShoppingBag,
+  LogOut,
+  Package,
+  Store,
+  Truck,
+  ShieldCheck,
+  Home as HomeIcon,
+} from 'lucide-react';
 import { AuthContext } from '../../context/AuthContext';
 import { CartContext } from '../../context/CartContext';
 
@@ -8,6 +16,7 @@ const Navbar = ({ toggleCart }) => {
   const { user, logout } = useContext(AuthContext);
   const { cart = [], cartCount = 0 } = useContext(CartContext);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const role = user?.role?.toLowerCase();
 
@@ -17,12 +26,25 @@ const Navbar = ({ toggleCart }) => {
   };
 
   return (
-    <nav className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
+    <nav className="bg-white shadow-xs border-b border-gray-200 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
-          <Link to="/" className="text-2xl font-black text-orange-600 tracking-tight">
-            FoodExpress
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link to="/" className="text-2xl font-black text-orange-600 tracking-tight">
+              FoodExpress
+            </Link>
+
+            {/* Top Home Button for Customer */}
+            {user && role === 'customer' && location.pathname !== '/' && (
+              <Link
+                to="/"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-100 text-sm font-bold transition"
+              >
+                <HomeIcon size={16} />
+                <span>Home</span>
+              </Link>
+            )}
+          </div>
 
           <div className="flex items-center gap-4">
             {user ? (
@@ -30,8 +52,24 @@ const Navbar = ({ toggleCart }) => {
                 {role === 'customer' && (
                   <>
                     <Link
+                      to="/"
+                      className={`flex items-center gap-1.5 text-sm font-semibold transition ${
+                        location.pathname === '/'
+                          ? 'text-orange-600'
+                          : 'text-gray-700 hover:text-orange-600'
+                      }`}
+                    >
+                      <HomeIcon size={18} />
+                      <span className="hidden sm:inline">Home</span>
+                    </Link>
+
+                    <Link
                       to="/track-order/latest"
-                      className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-orange-600 transition"
+                      className={`flex items-center gap-1.5 text-sm font-semibold transition ${
+                        location.pathname.startsWith('/track-order')
+                          ? 'text-orange-600'
+                          : 'text-gray-700 hover:text-orange-600'
+                      }`}
                     >
                       <Package size={18} />
                       <span className="hidden sm:inline">My Orders</span>
@@ -63,9 +101,9 @@ const Navbar = ({ toggleCart }) => {
                     </Link>
                     <Link
                       to="/manage-menu"
-                      className="text-sm font-semibold text-gray-700 hover:text-orange-600 hidden sm:inline"
+                      className="px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg text-sm font-semibold hover:bg-orange-100"
                     >
-                      Menu
+                      Manage Menu
                     </Link>
                   </div>
                 )}
@@ -91,9 +129,9 @@ const Navbar = ({ toggleCart }) => {
                     </Link>
                     <Link
                       to="/admin"
-                      className="text-sm font-semibold text-gray-700 hover:text-orange-600"
+                      className="px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg text-sm font-semibold hover:bg-orange-100"
                     >
-                      Vendors
+                      Vendor Approvals
                     </Link>
                   </div>
                 )}

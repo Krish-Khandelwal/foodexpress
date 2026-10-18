@@ -12,10 +12,19 @@ const orderSchema = new mongoose.Schema(
         price: { type: Number, required: true },
         quantity: { type: Number, default: 1, min: 1 },
         image: { type: String, default: '' },
+        isVeg: { type: Boolean, default: true },
       },
     ],
     totalAmount: { type: Number, required: true, min: 0 },
     deliveryAddress: { type: String, required: true },
+    customerLocation: {
+      lat: { type: Number, default: 28.625 },
+      lng: { type: Number, default: 77.215 },
+    },
+    riderLocation: {
+      lat: { type: Number, default: null },
+      lng: { type: Number, default: null },
+    },
     status: {
       type: String,
       enum: ['pending', 'preparing', 'ready', 'out for delivery', 'delivered', 'cancelled'],

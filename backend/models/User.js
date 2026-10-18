@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
     password: { type: String, required: true },
     phone: { type: String, default: '' },
     role: {
@@ -17,9 +17,10 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Salt rounds set to 8 for 4x faster pure-JS hashing while maintaining strong security
 userSchema.pre('save', async function () {
   if (this.isModified('password')) {
-    this.password = await bcrypt.hash(this.password, 10);
+    this.password = await bcrypt.hash(this.password, 8);
   }
 });
 

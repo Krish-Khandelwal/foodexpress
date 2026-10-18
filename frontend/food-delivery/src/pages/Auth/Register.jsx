@@ -20,18 +20,7 @@ export default function Register() {
     shopPhone: '',
     shopCuisine: '',
     shopDescription: '',
-    shopImage: '',
   });
-
-  const handleImageFile = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setFormData((prev) => ({ ...prev, shopImage: reader.result }));
-    };
-    reader.readAsDataURL(file);
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -55,7 +44,10 @@ export default function Register() {
 
   return (
     <div className="flex justify-center items-center min-h-[calc(100vh-4rem)] bg-gray-50 p-4">
-      <form onSubmit={handleSubmit} className="bg-white p-8 rounded-xl shadow-md w-full max-w-md border border-gray-100">
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white p-8 rounded-xl shadow-md w-full max-w-md border border-gray-100"
+      >
         <h2 className="text-2xl font-bold mb-6 text-center text-orange-600">Join FoodExpress</h2>
 
         {error && (
@@ -111,6 +103,7 @@ export default function Register() {
               <option value="customer">Customer</option>
               <option value="owner">Restaurant Owner</option>
               <option value="rider">Delivery Rider</option>
+              <option value="admin">Admin</option>
             </select>
           </div>
 
@@ -142,16 +135,6 @@ export default function Register() {
                 value={formData.shopCuisine}
                 onChange={(e) => setFormData({ ...formData, shopCuisine: e.target.value })}
               />
-
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">Restaurant Banner Image</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageFile}
-                  className="w-full text-sm"
-                />
-              </div>
             </div>
           )}
 

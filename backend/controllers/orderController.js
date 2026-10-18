@@ -17,7 +17,7 @@ export const createRazorpayOrder = async (req, res) => {
 
     const { amount } = req.body;
     const options = {
-      amount: Math.max(100, Math.round(Number(amount) * 100)), // in paise
+      amount: Math.max(100, Math.round(Number(amount) * 100)),
       currency: 'INR',
       receipt: `rcpt_${Date.now()}`,
     };
@@ -39,6 +39,7 @@ export const createOrder = async (req, res) => {
       items,
       totalAmount,
       deliveryAddress,
+      customerLocation,
       paymentMethod,
       razorpayOrderId,
       razorpayPaymentId,
@@ -49,15 +50,14 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ message: 'Order must contain at least one item' });
     }
 
-    // Resolve shopId from payload, first item, or MenuItem lookup
     let resolvedShopId = shopId || items[0]?.shopId || items[0]?.shop;
     if (!resolvedShopId && items[0]?.menuItem) {
-      const foundItem = await MenuItem.findById(items[0].menuItem);
+      const foundItem = await MenuItem.findById(items[0].menuItem).lean();
       resolvedShopId = foundItem?.shop;
     }
 
     if (!resolvedShopId) {
-      const fallbackShop = await Shop.findOne();
+      const fallbackShop = await Shop.findOne().lean();
       resolvedShopId = fallbackShop?._id;
     }
 
@@ -65,7 +65,6 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ message: 'Restaurant (shopId) could not be determined for this order' });
     }
 
-    // Verify signature if paid via Razorpay
     if (razorpayOrderId && razorpayPaymentId && razorpaySignature && isRazorpayConfigured()) {
       const body = `${razorpayOrderId}|${razorpayPaymentId}`;
       const expectedSignature = crypto
@@ -93,9 +92,14 @@ export const createOrder = async (req, res) => {
         price: Number(i.price),
         quantity: Number(i.quantity || 1),
         image: i.image || '',
+        isVeg: i.isVeg !== undefined ? Boolean(i.isVeg) : true,
       })),
       totalAmount: calculatedTotal,
       deliveryAddress: deliveryAddress || 'Customer Address',
+      customerLocation: {
+        lat: Number(customerLocation?.lat) || 28.625,
+        lng: Number(customerLocation?.lng) || 77.215,
+      },
       status: 'pending',
       paymentMethod: paymentMethod || (razorpayPaymentId ? 'ONLINE' : 'COD'),
       paymentStatus: razorpayPaymentId ? 'paid' : 'pending',
@@ -106,7 +110,7 @@ export const createOrder = async (req, res) => {
 
     const populatedOrder = await Order.findById(order._id)
       .populate('customer', 'name email phone')
-      .populate('shop', 'name address phone')
+      .populate('shop', 'name address phone location')
       .populate('rider', 'name phone');
 
     return res.status(201).json({ ...populatedOrder.toObject(), order: populatedOrder });
@@ -120,7 +124,7 @@ export const getOrderById = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
       .populate('customer', 'name email phone')
-      .populate('shop', 'name address phone')
+      .populate('shop', 'name address phone location')
       .populate('rider', 'name phone');
 
     if (!order) return res.status(404).json({ message: 'Order not found' });
@@ -134,7 +138,7 @@ export const getOrderById = async (req, res) => {
 export const getCustomerOrders = async (req, res) => {
   try {
     const orders = await Order.find({ customer: req.user._id })
-      .populate('shop', 'name address phone image')
+      .populate('shop', 'name address phone location')
       .populate('rider', 'name phone')
       .sort({ createdAt: -1 });
     return res.json(orders);
@@ -146,7 +150,7 @@ export const getCustomerOrders = async (req, res) => {
 // GET /api/orders/owner-orders
 export const getOwnerOrders = async (req, res) => {
   try {
-    const shop = await Shop.findOne({ owner: req.user._id });
+    const shop = await Shop.findOne({ owner: req.user._id }).lean();
     if (!shop) return res.json([]);
 
     const orders = await Order.find({ shop: shop._id })
@@ -190,7 +194,7 @@ export const updateOrderStatusByOwner = async (req, res) => {
 // PUT /api/orders/:id/accept-delivery
 export const acceptDeliveryByRider = async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id);
+    const order = await Order.findById(req.params.id).populate('shop', 'location');
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
     if (order.rider && order.rider.toString() !== req.user._id.toString()) {
@@ -201,8 +205,33 @@ export const acceptDeliveryByRider = async (req, res) => {
     if (!order.riderOtp) {
       order.riderOtp = generateOTP();
     }
+    // Initialize riderLocation near restaurant when order is accepted
+    if (!order.riderLocation?.lat) {
+      order.riderLocation = {
+        lat: (order.shop?.location?.lat || 28.6139) + 0.002,
+        lng: (order.shop?.location?.lng || 77.209) + 0.002,
+      };
+    }
     await order.save();
     return res.json(order);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// PUT /api/orders/:id/rider-location
+export const updateRiderLocation = async (req, res) => {
+  try {
+    const { lat, lng } = req.body;
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+
+    order.riderLocation = {
+      lat: Number(lat),
+      lng: Number(lng),
+    };
+    await order.save();
+    return res.json({ message: 'Rider location updated', riderLocation: order.riderLocation });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -212,7 +241,7 @@ export const acceptDeliveryByRider = async (req, res) => {
 export const verifyPickupOtpByOwner = async (req, res) => {
   try {
     const { otp } = req.body;
-    const order = await Order.findById(req.params.id);
+    const order = await Order.findById(req.params.id).populate('shop', 'location');
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
     if (!order.rider) return res.status(400).json({ message: 'No rider assigned yet.' });
@@ -221,6 +250,10 @@ export const verifyPickupOtpByOwner = async (req, res) => {
     }
 
     order.status = 'out for delivery';
+    order.riderLocation = {
+      lat: order.shop?.location?.lat || 28.6139,
+      lng: order.shop?.location?.lng || 77.209,
+    };
     await order.save();
     return res.json({ message: 'Order is Out for Delivery.', order });
   } catch (error) {
@@ -241,6 +274,12 @@ export const verifyDeliveryOtpByRider = async (req, res) => {
 
     order.status = 'delivered';
     order.paymentStatus = 'paid';
+    if (order.customerLocation?.lat) {
+      order.riderLocation = {
+        lat: order.customerLocation.lat,
+        lng: order.customerLocation.lng,
+      };
+    }
     await order.save();
     return res.json({ message: 'Order Delivered.', order });
   } catch (error) {
@@ -258,7 +297,7 @@ export const getRiderOrders = async (req, res) => {
       ],
     })
       .populate('customer', 'name phone')
-      .populate('shop', 'name address phone')
+      .populate('shop', 'name address phone location')
       .sort({ createdAt: -1 });
 
     const sanitized = orders.map((o) => {
