@@ -9,11 +9,13 @@ import {
   getAllMenu,
   getApprovedShops,
   getShopMenu,
+  getMenuCategories,
 } from '../controllers/menuController.js';
 
 const router = express.Router();
 
 router.get('/', getAllMenu);
+router.get('/categories', getMenuCategories);
 router.get('/shops', getApprovedShops);
 router.get('/shops/:shopId/menu', getShopMenu);
 router.get('/my-menu', protect, getOwnerMenu);

@@ -16,6 +16,7 @@ export default function ShopDashboard() {
   const [showShopModal, setShowShopModal] = useState(false);
   const [orders, setOrders] = useState([]);
   const [pickupOtpInputs, setPickupOtpInputs] = useState({});
+  const [feedback, setFeedback] = useState({ type: '', text: '' });
 
   useEffect(() => {
     fetchShop();
@@ -53,37 +54,39 @@ export default function ShopDashboard() {
       const { data } = await api.put('/auth/my-shop', shop);
       setShop(data.shop);
       setShowShopModal(false);
-      alert('Restaurant details updated!');
+      setFeedback({ type: 'success', text: 'Restaurant details updated!' });
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to save restaurant');
+      setFeedback({
+        type: 'error',
+        text: err.response?.data?.message || 'Failed to save restaurant',
+      });
+    }
+  };
+
+  const reverseGeocodeEnglish = async (lat, lng) => {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=en`
+      );
+      const geo = await res.json();
+      if (geo?.display_name) {
+        setShop((prev) => ({ ...prev, address: geo.display_name }));
+      }
+    } catch {
+      // Ignore reverse geocode failure
     }
   };
 
   const handleDetectShopGps = () => {
-    if (!navigator.geolocation) {
-      return alert('Geolocation is not supported by your browser');
-    }
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        setShop((prev) => ({
-          ...prev,
-          location: { lat: latitude, lng: longitude },
-        }));
-        try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
-          );
-          const geo = await res.json();
-          if (geo?.display_name) {
-            setShop((prev) => ({ ...prev, address: geo.display_name }));
-          }
-        } catch {
-          // Ignore reverse geocode failure
-        }
-      },
-      () => alert('Unable to retrieve your location')
-    );
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const { latitude, longitude } = pos.coords;
+      setShop((prev) => ({
+        ...prev,
+        location: { lat: latitude, lng: longitude },
+      }));
+      await reverseGeocodeEnglish(latitude, longitude);
+    });
   };
 
   const handleStatusChange = async (orderId, newStatus) => {
@@ -91,19 +94,31 @@ export default function ShopDashboard() {
       await api.put(`/orders/${orderId}/status`, { status: newStatus });
       fetchOrders();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update status');
+      setFeedback({
+        type: 'error',
+        text: err.response?.data?.message || 'Failed to update status',
+      });
     }
   };
 
   const handleVerifyRiderOtp = async (orderId) => {
     const otp = pickupOtpInputs[orderId];
-    if (!otp) return alert('Please enter the OTP from the delivery rider');
+    if (!otp) {
+      setFeedback({ type: 'error', text: 'Please enter the Rider Pickup OTP.' });
+      return;
+    }
     try {
       await api.post(`/orders/${orderId}/verify-pickup-otp`, { otp });
-      alert('OTP verified! Status updated to Out for Delivery.');
+      setFeedback({
+        type: 'success',
+        text: 'Pickup OTP verified! Order is now Out for Delivery.',
+      });
       fetchOrders();
     } catch (err) {
-      alert(err.response?.data?.message || 'Invalid Rider OTP');
+      setFeedback({
+        type: 'error',
+        text: err.response?.data?.message || 'Invalid Rider OTP',
+      });
     }
   };
 
@@ -111,7 +126,6 @@ export default function ShopDashboard() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      {/* Top Bar: Restaurant Details & Actions */}
       <div className="flex flex-wrap justify-between items-center bg-white p-6 rounded-xl shadow-xs border">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">{shop?.name || 'My Restaurant'}</h1>
@@ -138,7 +152,25 @@ export default function ShopDashboard() {
         </div>
       </div>
 
-      {/* Orders Section Directly on Dashboard */}
+      {feedback.text && (
+        <div
+          className={`p-3 rounded-lg text-sm font-medium border flex justify-between items-center ${
+            feedback.type === 'error'
+              ? 'bg-red-50 text-red-700 border-red-200'
+              : 'bg-green-50 text-green-700 border-green-200'
+          }`}
+        >
+          <span>{feedback.text}</span>
+          <button
+            onClick={() => setFeedback({ type: '', text: '' })}
+            className="text-xs font-bold underline cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Orders Section */}
       <div className="bg-white p-6 rounded-xl shadow-xs border">
         <div className="flex justify-between items-center mb-6 border-b pb-4">
           <div>
@@ -226,7 +258,7 @@ export default function ShopDashboard() {
         )}
       </div>
 
-      {/* Edit Restaurant Profile Modal (No Banner Upload, includes Map Location Picker) */}
+      {/* Edit Restaurant Profile Modal */}
       {showShopModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <form
@@ -274,7 +306,6 @@ export default function ShopDashboard() {
               onChange={(e) => setShop({ ...shop, description: e.target.value })}
             />
 
-            {/* Pin Restaurant Location on Map */}
             <div className="space-y-2 pt-1">
               <div className="flex justify-between items-center">
                 <label className="text-xs font-bold text-gray-600 uppercase">
@@ -294,9 +325,10 @@ export default function ShopDashboard() {
                   lng={shop.location?.lng || 77.209}
                   popupText={shop.name || 'Restaurant Location'}
                   selectable
-                  onSelectLocation={({ lat, lng }) =>
-                    setShop((prev) => ({ ...prev, location: { lat, lng } }))
-                  }
+                  onSelectLocation={async ({ lat, lng }) => {
+                    setShop((prev) => ({ ...prev, location: { lat, lng } }));
+                    await reverseGeocodeEnglish(lat, lng);
+                  }}
                 />
               </div>
             </div>

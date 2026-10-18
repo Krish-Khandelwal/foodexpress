@@ -24,22 +24,9 @@ export const CartProvider = ({ children }) => {
     localStorage.setItem('foodexpress_cart', JSON.stringify(cart));
   }, [cart]);
 
+  // Allows adding items from multiple different restaurants in the same order
   const addToCart = (item) => {
     setCart((prevCart) => {
-      // Check if trying to add item from a different restaurant
-      if (
-        prevCart.length > 0 &&
-        item.shopId &&
-        prevCart[0].shopId &&
-        prevCart[0].shopId !== item.shopId
-      ) {
-        const confirmSwitch = window.confirm(
-          'Your cart contains items from another restaurant. Clear current cart and add this item?'
-        );
-        if (!confirmSwitch) return prevCart;
-        return [{ ...item, quantity: item.quantity || 1 }];
-      }
-
       const existingItemIndex = prevCart.findIndex((i) => i.menuItem === item.menuItem);
 
       if (existingItemIndex > -1) {
@@ -76,14 +63,17 @@ export const CartProvider = ({ children }) => {
     localStorage.removeItem('foodexpress_cart');
   };
 
-  const cartTotal = cart.reduce((total, item) => total + Number(item.price) * Number(item.quantity), 0);
+  const cartTotal = cart.reduce(
+    (total, item) => total + Number(item.price) * Number(item.quantity),
+    0
+  );
   const cartCount = cart.reduce((count, item) => count + Number(item.quantity), 0);
 
   return (
     <CartContext.Provider
       value={{
         cart,
-        cartItems: cart, // Alias for Navbar compatibility
+        cartItems: cart,
         cartCount,
         addToCart,
         updateQuantity,

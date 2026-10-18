@@ -14,6 +14,7 @@ export default function DeliveryDashboard() {
   const [customerOtpInputs, setCustomerOtpInputs] = useState({});
   const [activeMapOrder, setActiveMapOrder] = useState(null);
   const [riderCoords, setRiderCoords] = useState({ lat: 28.618, lng: 77.212 });
+  const [banner, setBanner] = useState({ type: '', text: '' });
 
   useEffect(() => {
     fetchRiderOrders();
@@ -31,28 +32,43 @@ export default function DeliveryDashboard() {
   };
 
   const handleAcceptOrder = async (orderId) => {
+    setBanner({ type: '', text: '' });
     try {
-      const { data } = await api.put(`/orders/${orderId}/accept-delivery`);
-      alert(`Delivery Accepted! Give this Pickup OTP to the Restaurant Owner: ${data.riderOtp}`);
+      await api.put(`/orders/${orderId}/accept-delivery`);
+      setBanner({
+        type: 'success',
+        text: 'Delivery accepted! Share the Pickup OTP shown on the card below with the restaurant.',
+      });
       fetchRiderOrders();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to accept order');
+      setBanner({
+        type: 'error',
+        text: err.response?.data?.message || 'Failed to accept order',
+      });
     }
   };
 
   const handleVerifyCustomerOtp = async (orderId) => {
     const otp = customerOtpInputs[orderId];
-    if (!otp) return alert('Enter the Customer OTP to complete delivery');
+    if (!otp) {
+      setBanner({ type: 'error', text: 'Enter the Customer Delivery OTP to complete delivery.' });
+      return;
+    }
     try {
       await api.post(`/orders/${orderId}/verify-delivery-otp`, { otp });
-      alert('Customer OTP verified! Order marked as Delivered.');
+      setBanner({
+        type: 'success',
+        text: 'Customer OTP verified! Order marked as Delivered.',
+      });
       fetchRiderOrders();
     } catch (err) {
-      alert(err.response?.data?.message || 'Invalid Customer OTP');
+      setBanner({
+        type: 'error',
+        text: err.response?.data?.message || 'Invalid Customer OTP',
+      });
     }
   };
 
-  // Broadcast Rider GPS or Clicked Map Position to Customer & Backend
   const broadcastRiderLocation = async (orderId, lat, lng) => {
     setRiderCoords({ lat, lng });
     try {
@@ -66,22 +82,34 @@ export default function DeliveryDashboard() {
   };
 
   const handleShareMyGps = (orderId) => {
-    if (!navigator.geolocation) {
-      return alert('Geolocation not supported by browser');
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        broadcastRiderLocation(orderId, latitude, longitude);
-        alert('Your live GPS location has been sent to the customer!');
-      },
-      () => alert('Could not get GPS. You can also click on the map to update your rider pin.')
-    );
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      const { latitude, longitude } = pos.coords;
+      broadcastRiderLocation(orderId, latitude, longitude);
+    });
   };
 
   return (
     <div className="p-6 max-w-5xl mx-auto bg-gray-50 min-h-screen">
-      <h1 className="text-3xl font-bold mb-8 text-gray-800">FoodExpress Delivery Dashboard</h1>
+      <h1 className="text-3xl font-bold mb-6 text-gray-800">FoodExpress Delivery Dashboard</h1>
+
+      {banner.text && (
+        <div
+          className={`p-3 rounded-lg mb-6 text-sm font-medium border flex justify-between items-center ${
+            banner.type === 'error'
+              ? 'bg-red-50 text-red-700 border-red-200'
+              : 'bg-green-50 text-green-700 border-green-200'
+          }`}
+        >
+          <span>{banner.text}</span>
+          <button
+            onClick={() => setBanner({ type: '', text: '' })}
+            className="text-xs font-bold underline cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {orders.length === 0 ? (
         <p className="text-center text-gray-500 text-lg">
@@ -89,127 +117,140 @@ export default function DeliveryDashboard() {
         </p>
       ) : (
         <div className="space-y-6">
-          {orders.map((order) => (
-            <div
-              key={order._id}
-              className="border border-gray-200 rounded-xl p-5 bg-white shadow-xs flex flex-col md:flex-row justify-between gap-6"
-            >
-              <div className="flex-1">
-                <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-                  <div className="flex items-center gap-3">
-                    <span className="font-bold text-lg">Order #{order._id.slice(-6)}</span>
-                    <span className="px-3 py-1 bg-orange-100 text-orange-700 text-xs font-bold uppercase rounded-full">
-                      {order.status}
-                    </span>
-                  </div>
+          {orders.map((order) => {
+            const pickupRestaurants =
+              Array.isArray(order.shops) && order.shops.length > 0
+                ? order.shops
+                : order.shop
+                ? [order.shop]
+                : [];
 
-                  {/* Open Route Map Window Button */}
-                  <button
-                    onClick={() => {
-                      setRiderCoords(
-                        order.riderLocation?.lat
-                          ? order.riderLocation
-                          : {
-                              lat: (order.shop?.location?.lat || 28.6139) + 0.003,
-                              lng: (order.shop?.location?.lng || 77.209) + 0.003,
-                            }
-                      );
-                      setActiveMapOrder(order);
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-bold border border-blue-200 cursor-pointer"
-                  >
-                    <MapPin size={15} />
-                    <span>View Pickup & Delivery Map</span>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                  <div className="bg-gray-50 p-3 rounded-lg border">
-                    <p className="text-xs text-orange-600 font-bold uppercase mb-1">
-                      🏪 Pickup From (Restaurant)
-                    </p>
-                    <p className="font-semibold text-gray-800">{order.shop?.name}</p>
-                    <p className="text-sm text-gray-600">{order.shop?.address}</p>
-                    <p className="text-sm text-gray-600 mt-1">Phone: {order.shop?.phone}</p>
-                  </div>
-
-                  <div className="bg-gray-50 p-3 rounded-lg border">
-                    <p className="text-xs text-green-700 font-bold uppercase mb-1">
-                      🏠 Deliver To (Customer)
-                    </p>
-                    <p className="font-semibold text-gray-800">{order.customer?.name}</p>
-                    <p className="text-sm text-gray-600">{order.deliveryAddress}</p>
-                    <p className="text-sm text-gray-600 mt-1">Phone: {order.customer?.phone}</p>
-                  </div>
-                </div>
-
-                {order.riderOtp &&
-                  order.status !== 'out for delivery' &&
-                  order.status !== 'delivered' && (
-                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-900 flex justify-between items-center">
-                      <span className="text-sm font-medium">
-                        Pickup OTP (Give to Restaurant):
-                      </span>
-                      <span className="font-mono text-2xl font-bold tracking-widest">
-                        {order.riderOtp}
+            return (
+              <div
+                key={order._id}
+                className="border border-gray-200 rounded-xl p-5 bg-white shadow-xs flex flex-col md:flex-row justify-between gap-6"
+              >
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-3">
+                      <span className="font-bold text-lg">Order #{order._id.slice(-6)}</span>
+                      <span className="px-3 py-1 bg-orange-100 text-orange-700 text-xs font-bold uppercase rounded-full">
+                        {order.status}
                       </span>
                     </div>
-                  )}
-              </div>
 
-              <div className="flex flex-col justify-center items-end gap-3 min-w-55 border-t md:border-t-0 md:border-l pt-4 md:pt-0 md:pl-6 border-gray-200">
-                {!order.rider && (
-                  <button
-                    onClick={() => handleAcceptOrder(order._id)}
-                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-xs transition cursor-pointer"
-                  >
-                    Accept Delivery
-                  </button>
-                )}
-
-                {order.status === 'out for delivery' && (
-                  <div className="w-full flex flex-col gap-2">
-                    <label className="text-xs text-gray-600 font-bold">
-                      Customer OTP Required:
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Enter Customer OTP"
-                      className="border-2 border-gray-300 rounded-lg px-3 py-2 text-center text-lg tracking-widest w-full font-mono"
-                      value={customerOtpInputs[order._id] || ''}
-                      onChange={(e) =>
-                        setCustomerOtpInputs({
-                          ...customerOtpInputs,
-                          [order._id]: e.target.value,
-                        })
-                      }
-                    />
                     <button
-                      onClick={() => handleVerifyCustomerOtp(order._id)}
-                      className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-xs transition cursor-pointer"
+                      onClick={() => {
+                        setRiderCoords(
+                          order.riderLocation?.lat
+                            ? order.riderLocation
+                            : {
+                                lat: (order.shop?.location?.lat || 28.6139) + 0.003,
+                                lng: (order.shop?.location?.lng || 77.209) + 0.003,
+                              }
+                        );
+                        setActiveMapOrder(order);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-bold border border-blue-200 cursor-pointer"
                     >
-                      Verify & Complete
+                      <MapPin size={15} />
+                      <span>View Pickup & Delivery Road Map</span>
                     </button>
                   </div>
-                )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div className="bg-gray-50 p-3 rounded-lg border space-y-2">
+                      <p className="text-xs text-orange-600 font-bold uppercase">
+                        🏪 Pickup From ({pickupRestaurants.length} Restaurant
+                        {pickupRestaurants.length > 1 ? 's' : ''})
+                      </p>
+                      {pickupRestaurants.map((s, idx) => (
+                        <div key={s._id || idx} className="border-b last:border-b-0 pb-1 last:pb-0">
+                          <p className="font-semibold text-gray-800">{s.name}</p>
+                          <p className="text-xs text-gray-600">{s.address}</p>
+                          {s.phone && <p className="text-xs text-gray-600">Phone: {s.phone}</p>}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="bg-gray-50 p-3 rounded-lg border">
+                      <p className="text-xs text-green-700 font-bold uppercase mb-1">
+                        🏠 Deliver To (Customer)
+                      </p>
+                      <p className="font-semibold text-gray-800">{order.customer?.name}</p>
+                      <p className="text-sm text-gray-600">{order.deliveryAddress}</p>
+                      <p className="text-sm text-gray-600 mt-1">Phone: {order.customer?.phone}</p>
+                    </div>
+                  </div>
+
+                  {order.riderOtp &&
+                    order.status !== 'out for delivery' &&
+                    order.status !== 'delivered' && (
+                      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-900 flex justify-between items-center">
+                        <span className="text-sm font-medium">
+                          Pickup OTP (Give to Restaurant):
+                        </span>
+                        <span className="font-mono text-2xl font-bold tracking-widest">
+                          {order.riderOtp}
+                        </span>
+                      </div>
+                    )}
+                </div>
+
+                <div className="flex flex-col justify-center items-end gap-3 min-w-55 border-t md:border-t-0 md:border-l pt-4 md:pt-0 md:pl-6 border-gray-200">
+                  {!order.rider && (
+                    <button
+                      onClick={() => handleAcceptOrder(order._id)}
+                      className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-xs transition cursor-pointer"
+                    >
+                      Accept Delivery
+                    </button>
+                  )}
+
+                  {order.status === 'out for delivery' && (
+                    <div className="w-full flex flex-col gap-2">
+                      <label className="text-xs text-gray-600 font-bold">
+                        Customer OTP Required:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Enter Customer OTP"
+                        className="border-2 border-gray-300 rounded-lg px-3 py-2 text-center text-lg tracking-widest w-full font-mono"
+                        value={customerOtpInputs[order._id] || ''}
+                        onChange={(e) =>
+                          setCustomerOtpInputs({
+                            ...customerOtpInputs,
+                            [order._id]: e.target.value,
+                          })
+                        }
+                      />
+                      <button
+                        onClick={() => handleVerifyCustomerOtp(order._id)}
+                        className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-xs transition cursor-pointer"
+                      >
+                        Verify & Complete
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {/* Map Window Modal for Pickup (Restaurant) & Drop-off (Customer) */}
+      {/* Map Window Modal */}
       {activeMapOrder && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-xl w-full max-w-4xl space-y-4 shadow-xl">
             <div className="flex justify-between items-center border-b pb-3">
               <div>
                 <h2 className="text-xl font-bold text-gray-800">
-                  Route Map — Order #{activeMapOrder._id.slice(-6)}
+                  Road Route Map — Order #{activeMapOrder._id.slice(-6)}
                 </h2>
                 <p className="text-xs text-gray-500">
-                  🏪 Pickup: {activeMapOrder.shop?.name} ({activeMapOrder.shop?.address}) &rarr; 🏠
-                  Drop-off: {activeMapOrder.customer?.name} ({activeMapOrder.deliveryAddress})
+                  🏪 Pickup: {activeMapOrder.shop?.name} &rarr; 🏠 Drop-off:{' '}
+                  {activeMapOrder.customer?.name} ({activeMapOrder.deliveryAddress})
                 </p>
               </div>
               <button
@@ -231,7 +272,7 @@ export default function DeliveryDashboard() {
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 cursor-pointer"
               >
                 <Navigation size={14} />
-                <span>Send My Live GPS to Customer</span>
+                <span>Update My Live GPS</span>
               </button>
             </div>
 
@@ -240,6 +281,7 @@ export default function DeliveryDashboard() {
                 shopLocation={
                   activeMapOrder.shop?.location || { lat: 28.6139, lng: 77.209 }
                 }
+                additionalShops={activeMapOrder.shops}
                 customerLocation={
                   activeMapOrder.customerLocation || { lat: 28.625, lng: 77.215 }
                 }

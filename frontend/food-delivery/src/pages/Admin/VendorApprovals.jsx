@@ -5,6 +5,7 @@ import api from '../../api/axios';
 const VendorApprovals = () => {
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState('');
 
   const fetchVendors = async () => {
     try {
@@ -24,15 +25,21 @@ const VendorApprovals = () => {
   const handleStatusUpdate = async (id, status) => {
     try {
       await api.put(`/admin/vendor-status/${id}`, { status });
+      setNotice(`Vendor status updated to ${status}`);
       fetchVendors();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update vendor status');
+      setNotice(err.response?.data?.message || 'Failed to update vendor status');
     }
   };
 
   return (
     <div className="max-w-5xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-6">Restaurant & Vendor Approvals</h1>
+      {notice && (
+        <div className="mb-4 p-3 rounded-lg bg-blue-50 text-blue-800 text-sm font-medium border border-blue-200">
+          {notice}
+        </div>
+      )}
       {loading ? (
         <p className="text-gray-500 animate-pulse">Loading vendors...</p>
       ) : vendors.length === 0 ? (

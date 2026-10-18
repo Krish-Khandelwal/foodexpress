@@ -31,7 +31,7 @@ export const createRazorpayOrder = async (req, res) => {
   }
 };
 
-// POST /api/orders
+// POST /api/orders (Supports ordering from 1 or multiple restaurants in the same order)
 export const createOrder = async (req, res) => {
   try {
     const {
@@ -50,19 +50,52 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ message: 'Order must contain at least one item' });
     }
 
-    let resolvedShopId = shopId || items[0]?.shopId || items[0]?.shop;
-    if (!resolvedShopId && items[0]?.menuItem) {
-      const foundItem = await MenuItem.findById(items[0].menuItem).lean();
-      resolvedShopId = foundItem?.shop;
+    // Resolve shopId for each item so multi-restaurant orders work seamlessly
+    const enrichedItems = [];
+    const shopIdSet = new Set();
+
+    for (const item of items) {
+      let itemShopId = item.shopId || item.shop;
+      let itemShopName = item.shopName || '';
+
+      if (!itemShopId && item.menuItem) {
+        const dbItem = await MenuItem.findById(item.menuItem).populate('shop', 'name').lean();
+        if (dbItem?.shop) {
+          itemShopId = dbItem.shop._id || dbItem.shop;
+          itemShopName = dbItem.shop.name || '';
+        }
+      }
+
+      if (itemShopId) {
+        shopIdSet.add(itemShopId.toString());
+      }
+
+      enrichedItems.push({
+        menuItem: item.menuItem,
+        shop: itemShopId || undefined,
+        shopName: itemShopName,
+        name: item.name,
+        price: Number(item.price),
+        quantity: Number(item.quantity || 1),
+        image: item.image || '',
+        isVeg: item.isVeg !== undefined ? Boolean(item.isVeg) : true,
+      });
     }
 
-    if (!resolvedShopId) {
+    if (shopId) {
+      shopIdSet.add(shopId.toString());
+    }
+
+    if (shopIdSet.size === 0) {
       const fallbackShop = await Shop.findOne().lean();
-      resolvedShopId = fallbackShop?._id;
+      if (fallbackShop) {
+        shopIdSet.add(fallbackShop._id.toString());
+      }
     }
 
-    if (!resolvedShopId) {
-      return res.status(400).json({ message: 'Restaurant (shopId) could not be determined for this order' });
+    const uniqueShopIds = Array.from(shopIdSet);
+    if (uniqueShopIds.length === 0) {
+      return res.status(400).json({ message: 'No restaurant found for this order' });
     }
 
     if (razorpayOrderId && razorpayPaymentId && razorpaySignature && isRazorpayConfigured()) {
@@ -81,19 +114,13 @@ export const createOrder = async (req, res) => {
     const calculatedTotal =
       totalAmount !== undefined
         ? Number(totalAmount)
-        : items.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity || 1), 0);
+        : enrichedItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
     const order = await Order.create({
       customer: req.user._id,
-      shop: resolvedShopId,
-      items: items.map((i) => ({
-        menuItem: i.menuItem,
-        name: i.name,
-        price: Number(i.price),
-        quantity: Number(i.quantity || 1),
-        image: i.image || '',
-        isVeg: i.isVeg !== undefined ? Boolean(i.isVeg) : true,
-      })),
+      shop: uniqueShopIds[0],
+      shops: uniqueShopIds,
+      items: enrichedItems,
       totalAmount: calculatedTotal,
       deliveryAddress: deliveryAddress || 'Customer Address',
       customerLocation: {
@@ -111,6 +138,7 @@ export const createOrder = async (req, res) => {
     const populatedOrder = await Order.findById(order._id)
       .populate('customer', 'name email phone')
       .populate('shop', 'name address phone location')
+      .populate('shops', 'name address phone location')
       .populate('rider', 'name phone');
 
     return res.status(201).json({ ...populatedOrder.toObject(), order: populatedOrder });
@@ -125,6 +153,7 @@ export const getOrderById = async (req, res) => {
     const order = await Order.findById(req.params.id)
       .populate('customer', 'name email phone')
       .populate('shop', 'name address phone location')
+      .populate('shops', 'name address phone location')
       .populate('rider', 'name phone');
 
     if (!order) return res.status(404).json({ message: 'Order not found' });
@@ -139,6 +168,7 @@ export const getCustomerOrders = async (req, res) => {
   try {
     const orders = await Order.find({ customer: req.user._id })
       .populate('shop', 'name address phone location')
+      .populate('shops', 'name address phone location')
       .populate('rider', 'name phone')
       .sort({ createdAt: -1 });
     return res.json(orders);
@@ -153,8 +183,12 @@ export const getOwnerOrders = async (req, res) => {
     const shop = await Shop.findOne({ owner: req.user._id }).lean();
     if (!shop) return res.json([]);
 
-    const orders = await Order.find({ shop: shop._id })
+    const orders = await Order.find({
+      $or: [{ shop: shop._id }, { shops: shop._id }, { 'items.shop': shop._id }],
+    })
       .populate('customer', 'name email phone')
+      .populate('shop', 'name address phone location')
+      .populate('shops', 'name address phone location')
       .populate('rider', 'name phone')
       .sort({ createdAt: -1 });
 
@@ -205,7 +239,6 @@ export const acceptDeliveryByRider = async (req, res) => {
     if (!order.riderOtp) {
       order.riderOtp = generateOTP();
     }
-    // Initialize riderLocation near restaurant when order is accepted
     if (!order.riderLocation?.lat) {
       order.riderLocation = {
         lat: (order.shop?.location?.lat || 28.6139) + 0.002,
@@ -298,6 +331,7 @@ export const getRiderOrders = async (req, res) => {
     })
       .populate('customer', 'name phone')
       .populate('shop', 'name address phone location')
+      .populate('shops', 'name address phone location')
       .sort({ createdAt: -1 });
 
     const sanitized = orders.map((o) => {

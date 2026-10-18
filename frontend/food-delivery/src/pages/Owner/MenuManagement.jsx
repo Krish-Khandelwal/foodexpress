@@ -5,8 +5,11 @@ import api from '../../api/axios';
 
 export default function ManageMenu() {
   const [menuItems, setMenuItems] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [editingItem, setEditingItem] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState({ type: '', text: '' });
+
   const [foodForm, setFoodForm] = useState({
     name: '',
     description: '',
@@ -18,8 +21,24 @@ export default function ManageMenu() {
   });
 
   useEffect(() => {
+    fetchCategories();
     fetchMenu();
   }, []);
+
+  const fetchCategories = async () => {
+    try {
+      const { data } = await api.get('/menu/categories');
+      if (Array.isArray(data) && data.length > 0) {
+        setCategories(data);
+        setFoodForm((prev) => ({
+          ...prev,
+          category: prev.category || data[0].name,
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to load categories:', err);
+    }
+  };
 
   const fetchMenu = async () => {
     try {
@@ -46,7 +65,7 @@ export default function ManageMenu() {
       name: '',
       description: '',
       price: '',
-      category: 'Main Course',
+      category: categories[0]?.name || 'Main Course',
       image: '',
       isVeg: true,
       isAvailable: true,
@@ -56,30 +75,35 @@ export default function ManageMenu() {
   const handleSaveFood = async (e) => {
     e.preventDefault();
     setUploading(true);
+    setStatusMessage({ type: '', text: '' });
     try {
       if (editingItem) {
         await api.put(`/menu/${editingItem._id}`, foodForm);
-        alert('Food item updated successfully!');
+        setStatusMessage({ type: 'success', text: 'Food item updated successfully!' });
       } else {
         await api.post('/menu', foodForm);
-        alert('Food item uploaded & saved!');
+        setStatusMessage({ type: 'success', text: 'New food item added to your menu!' });
       }
       resetForm();
       fetchMenu();
     } catch (err) {
-      alert(err.response?.data?.message || 'Error saving food item');
+      setStatusMessage({
+        type: 'error',
+        text: err.response?.data?.message || 'Error saving food item',
+      });
     } finally {
       setUploading(false);
     }
   };
 
   const startEditFood = (item) => {
+    setStatusMessage({ type: '', text: '' });
     setEditingItem(item);
     setFoodForm({
       name: item.name,
       description: item.description || '',
       price: item.price,
-      category: item.category || 'Main Course',
+      category: item.category || categories[0]?.name || 'Main Course',
       image: item.image || item.imageUrl || '',
       isVeg: item.isVeg !== undefined ? Boolean(item.isVeg) : true,
       isAvailable: item.isAvailable ?? true,
@@ -88,12 +112,13 @@ export default function ManageMenu() {
   };
 
   const handleDeleteFood = async (id) => {
-    if (!window.confirm('Delete this food item?')) return;
+    setStatusMessage({ type: '', text: '' });
     try {
       await api.delete(`/menu/${id}`);
+      setStatusMessage({ type: 'success', text: 'Food item deleted.' });
       fetchMenu();
     } catch {
-      alert('Failed to delete item');
+      setStatusMessage({ type: 'error', text: 'Failed to delete food item.' });
     }
   };
 
@@ -109,6 +134,18 @@ export default function ManageMenu() {
           <span>Back to Dashboard</span>
         </Link>
       </div>
+
+      {statusMessage.text && (
+        <div
+          className={`p-3 rounded-lg mb-4 text-sm font-medium border ${
+            statusMessage.type === 'error'
+              ? 'bg-red-50 text-red-700 border-red-200'
+              : 'bg-green-50 text-green-700 border-green-200'
+          }`}
+        >
+          {statusMessage.text}
+        </div>
+      )}
 
       <form onSubmit={handleSaveFood} className="bg-white p-6 rounded-xl shadow-xs mb-8 border">
         <h3 className="text-lg font-bold text-gray-800 mb-4">
@@ -133,13 +170,25 @@ export default function ManageMenu() {
             onChange={(e) => setFoodForm({ ...foodForm, price: e.target.value })}
           />
 
-          <input
-            type="text"
-            placeholder="Category (Starter, Main Course, Dessert)"
-            className="p-2.5 border rounded-lg"
-            value={foodForm.category}
-            onChange={(e) => setFoodForm({ ...foodForm, category: e.target.value })}
-          />
+          {/* Category Dropdown Managed by Admin */}
+          <div>
+            <select
+              value={foodForm.category}
+              onChange={(e) => setFoodForm({ ...foodForm, category: e.target.value })}
+              className="w-full p-2.5 border rounded-lg bg-white text-gray-800"
+              required
+            >
+              {categories.length === 0 ? (
+                <option value="Main Course">Main Course</option>
+              ) : (
+                categories.map((cat) => (
+                  <option key={cat._id || cat.name} value={cat.name}>
+                    {cat.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
 
           {/* Veg / Non-Veg Selection */}
           <div className="flex items-center gap-4 p-2.5 border rounded-lg bg-gray-50">

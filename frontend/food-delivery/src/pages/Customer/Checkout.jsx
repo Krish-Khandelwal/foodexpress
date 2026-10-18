@@ -21,11 +21,13 @@ const Checkout = () => {
   const [paymentMethod, setPaymentMethod] = useState('COD');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [locationNotice, setLocationNotice] = useState('');
 
-  const reverseGeocode = async (lat, lng) => {
+  // Reverse geocode strictly in English using accept-language=en
+  const reverseGeocodeInEnglish = async (lat, lng) => {
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=en`
       );
       const data = await res.json();
       if (data?.display_name) {
@@ -39,24 +41,27 @@ const Checkout = () => {
   };
 
   const handleMapSelect = async ({ lat, lng }) => {
+    setLocationNotice('');
     setCustomerLocation({ lat, lng });
-    await reverseGeocode(lat, lng);
+    await reverseGeocodeInEnglish(lat, lng);
   };
 
   const handleDetectGps = () => {
     if (!navigator.geolocation) {
-      return alert('Geolocation is not supported by your browser');
+      setLocationNotice('Geolocation is not supported by your browser. Click on the map instead.');
+      return;
     }
     setDetectingGps(true);
+    setLocationNotice('');
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords;
         setCustomerLocation({ lat: latitude, lng: longitude });
-        await reverseGeocode(latitude, longitude);
+        await reverseGeocodeInEnglish(latitude, longitude);
         setDetectingGps(false);
       },
       () => {
-        alert('Could not access GPS location. You can click directly on the map instead.');
+        setLocationNotice('Could not access GPS. Click anywhere on the map below to set your location.');
         setDetectingGps(false);
       }
     );
@@ -82,6 +87,8 @@ const Checkout = () => {
       shopId: cart[0]?.shopId,
       items: cart.map((item) => ({
         menuItem: item.menuItem,
+        shopId: item.shopId,
+        shopName: item.shopName || '',
         name: item.name,
         price: item.price,
         quantity: item.quantity,
@@ -160,6 +167,9 @@ const Checkout = () => {
     }
   };
 
+  // Group items by restaurant for clear display
+  const uniqueRestaurants = [...new Set(cart.map((i) => i.shopName).filter(Boolean))];
+
   return (
     <div className="max-w-5xl mx-auto p-6 my-4">
       <div className="flex items-center justify-between mb-6">
@@ -176,6 +186,12 @@ const Checkout = () => {
       {error && (
         <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 border border-red-200 text-sm font-medium">
           {error}
+        </div>
+      )}
+
+      {locationNotice && (
+        <div className="bg-amber-50 text-amber-800 p-3 rounded-lg mb-4 border border-amber-200 text-xs font-medium">
+          {locationNotice}
         </div>
       )}
 
@@ -199,8 +215,7 @@ const Checkout = () => {
           </div>
 
           <p className="text-xs text-gray-500">
-            Click anywhere on the map below to pin your exact delivery location and auto-fill your
-            address:
+            Click anywhere on the map below to pin your exact delivery location (address auto-fills in English):
           </p>
 
           <div className="h-64 w-full">
@@ -215,7 +230,7 @@ const Checkout = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Full Delivery Address *
+              Full Delivery Address (English) *
             </label>
             <textarea
               rows={3}
@@ -268,13 +283,21 @@ const Checkout = () => {
 
         {/* Right: Order Summary */}
         <div className="bg-white p-6 rounded-xl shadow-xs border border-gray-200 h-fit">
-          <h2 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Order Summary</h2>
+          <h2 className="text-lg font-bold text-gray-800 mb-2 border-b pb-2">Order Summary</h2>
+          {uniqueRestaurants.length > 1 && (
+            <p className="text-xs text-orange-600 font-semibold mb-3">
+              Multi-Restaurant Order ({uniqueRestaurants.join(' + ')})
+            </p>
+          )}
           <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
             {cart.map((item) => (
-              <div key={item.menuItem} className="flex justify-between items-center text-sm">
+              <div key={item.menuItem} className="flex justify-between items-center text-sm border-b pb-2 last:border-b-0">
                 <div>
                   <p className="font-semibold text-gray-800">{item.name}</p>
-                  <p className="text-gray-500">
+                  {item.shopName && (
+                    <p className="text-xs text-orange-600 font-medium">{item.shopName}</p>
+                  )}
+                  <p className="text-gray-500 text-xs">
                     ₹{item.price} × {item.quantity}
                   </p>
                 </div>

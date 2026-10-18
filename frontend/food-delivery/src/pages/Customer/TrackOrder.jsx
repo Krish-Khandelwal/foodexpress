@@ -52,7 +52,6 @@ export default function TrackOrder() {
     return () => clearInterval(interval);
   }, [id]);
 
-  // Connect to Socket.IO room for real-time rider GPS updates
   useEffect(() => {
     if (!order?._id) return;
     const socket = io(SOCKET_URL);
@@ -98,9 +97,13 @@ export default function TrackOrder() {
     (order.riderLocation?.lat ? order.riderLocation : null) ||
     (order.rider ? { lat: shopLocation.lat + 0.003, lng: shopLocation.lng + 0.003 } : null);
 
+  const restaurantNames =
+    Array.isArray(order.shops) && order.shops.length > 0
+      ? order.shops.map((s) => s.name).join(' + ')
+      : order.shop?.name || 'FoodExpress';
+
   return (
     <div className="max-w-4xl mx-auto my-6 px-4 space-y-6">
-      {/* Top Bar with Back to Home Button */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">Track Your Order</h1>
         <Link
@@ -112,10 +115,10 @@ export default function TrackOrder() {
         </Link>
       </div>
 
-      {/* Live Map Tracking Card */}
+      {/* Live Road Route Map */}
       <div className="p-5 bg-white border rounded-xl shadow-xs">
         <div className="flex flex-wrap justify-between items-center mb-3 gap-2">
-          <h3 className="font-bold text-gray-800 text-lg">Live Delivery Map</h3>
+          <h3 className="font-bold text-gray-800 text-lg">Live Delivery Road Map</h3>
           <div className="flex gap-4 text-xs font-semibold text-gray-600">
             <span>🏪 Restaurant</span>
             <span>🛵 Delivery Rider</span>
@@ -125,9 +128,10 @@ export default function TrackOrder() {
         <div className="h-80 w-full">
           <LocationMap
             shopLocation={shopLocation}
+            additionalShops={order.shops}
             customerLocation={customerLocation}
             riderLocation={riderLocation}
-            shopName={order.shop?.name || 'Restaurant'}
+            shopName={restaurantNames}
             customerName={order.deliveryAddress || 'Your Delivery Address'}
             riderName={order.rider ? `Rider: ${order.rider.name}` : 'Rider'}
           />
@@ -140,7 +144,7 @@ export default function TrackOrder() {
           <div>
             <h2 className="text-2xl font-bold text-gray-800">Order #{order._id?.slice(-6)}</h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Restaurant: {order.shop?.name || 'FoodExpress'} • Address: {order.deliveryAddress}
+              Restaurant(s): <strong>{restaurantNames}</strong> • Address: {order.deliveryAddress}
             </p>
           </div>
           <span className="px-4 py-1.5 rounded-full bg-orange-100 text-orange-700 font-bold uppercase text-sm tracking-wide">
@@ -148,7 +152,6 @@ export default function TrackOrder() {
           </span>
         </div>
 
-        {/* Customer Delivery OTP UI */}
         {order.status !== 'delivered' && order.customerOtp && (
           <div className="my-6 p-5 bg-green-50 border-2 border-green-200 rounded-lg text-center">
             <p className="text-sm text-green-800 font-medium mb-1">
@@ -182,6 +185,9 @@ export default function TrackOrder() {
               />
               <div className="flex-1">
                 <p className="font-bold text-gray-800">{item.name}</p>
+                {item.shopName && (
+                  <p className="text-xs text-orange-600 font-semibold">{item.shopName}</p>
+                )}
                 <p className="text-sm text-gray-600">Qty: {item.quantity}</p>
               </div>
               <div className="font-bold text-lg text-gray-800">₹{item.price * item.quantity}</div>
@@ -195,7 +201,6 @@ export default function TrackOrder() {
         </div>
       </div>
 
-      {/* Previous Orders Selector */}
       {allOrders.length > 1 && (
         <div className="p-6 bg-white border rounded-xl shadow-xs">
           <h3 className="font-bold text-gray-800 mb-3">All Your Orders</h3>
@@ -212,7 +217,7 @@ export default function TrackOrder() {
                 }`}
               >
                 <span className="font-semibold text-sm">
-                  #{o._id.slice(-6)} — {o.shop?.name || 'Order'} (₹{o.totalAmount})
+                  #{o._id.slice(-6)} — ₹{o.totalAmount}
                 </span>
                 <span className="text-xs uppercase font-bold px-2.5 py-1 rounded-full bg-gray-200 text-gray-700">
                   {o.status}

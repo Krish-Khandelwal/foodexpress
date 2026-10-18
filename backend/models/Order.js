@@ -4,10 +4,13 @@ const orderSchema = new mongoose.Schema(
   {
     customer: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     shop: { type: mongoose.Schema.Types.ObjectId, ref: 'Shop', required: true },
+    shops: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Shop' }],
     rider: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     items: [
       {
         menuItem: { type: mongoose.Schema.Types.ObjectId, ref: 'MenuItem' },
+        shop: { type: mongoose.Schema.Types.ObjectId, ref: 'Shop' },
+        shopName: { type: String, default: '' },
         name: { type: String, required: true },
         price: { type: Number, required: true },
         quantity: { type: Number, default: 1, min: 1 },

@@ -1,6 +1,19 @@
 import MenuItem from '../models/MenuItem.js';
 import Shop from '../models/Shop.js';
+import Category from '../models/Category.js';
+import { ensureDefaultCategories } from './adminController.js';
 import { uploadToCloudinary } from '../config/cloudinary.js';
+
+// GET /api/menu/categories
+export const getMenuCategories = async (req, res) => {
+  try {
+    await ensureDefaultCategories();
+    const categories = await Category.find().sort({ name: 1 });
+    return res.json(categories);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
 
 // POST /api/menu
 export const createMenuItem = async (req, res) => {
@@ -113,7 +126,7 @@ export const deleteMenuItem = async (req, res) => {
   }
 };
 
-// GET /api/menu/my-menu (and /api/menu/owner)
+// GET /api/menu/my-menu
 export const getOwnerMenu = async (req, res) => {
   try {
     const shop = await Shop.findOne({ owner: req.user._id });
@@ -129,10 +142,9 @@ export const getOwnerMenu = async (req, res) => {
 export const getAllMenu = async (req, res) => {
   try {
     const items = await MenuItem.find({ isAvailable: true })
-      .populate('shop', 'name address image isOpen status cuisine')
+      .populate('shop', 'name address isOpen status cuisine location')
       .sort({ createdAt: -1 });
 
-    // Only return items whose shop is not explicitly rejected
     const visibleItems = items.filter((item) => item.shop?.status !== 'rejected');
     return res.json(visibleItems);
   } catch (error) {
@@ -156,7 +168,7 @@ export const getShopMenu = async (req, res) => {
     const items = await MenuItem.find({
       shop: req.params.shopId,
       isAvailable: true,
-    }).populate('shop', 'name address image isOpen');
+    }).populate('shop', 'name address isOpen location');
     return res.json(items);
   } catch (error) {
     return res.status(500).json({ message: error.message });

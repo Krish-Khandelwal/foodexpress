@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -11,7 +11,6 @@ import {
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
-// Custom emoji badge icons so markers never break and clearly distinguish roles
 const createBadgeIcon = (emoji, bgColor) =>
   L.divIcon({
     className: 'custom-leaflet-marker',
@@ -47,11 +46,6 @@ const MapClickHandler = ({ onSelectLocation }) => {
   return null;
 };
 
-/**
- * Supports both:
- * 1. Single interactive location picker: <LocationMap lat={..} lng={..} selectable onSelectLocation={fn} />
- * 2. Multi-marker live route tracker: <LocationMap shopLocation={..} customerLocation={..} riderLocation={..} />
- */
 const LocationMap = ({
   lat,
   lng,
@@ -59,12 +53,16 @@ const LocationMap = ({
   selectable = false,
   onSelectLocation,
   shopLocation,
+  additionalShops = [],
   customerLocation,
   riderLocation,
   shopName = 'Restaurant (Pickup)',
   customerName = 'Customer (Delivery)',
   riderName = 'Delivery Rider (Live)',
 }) => {
+  const [roadPositions, setRoadPositions] = useState([]);
+  const [routeInfo, setRouteInfo] = useState(null);
+
   const defaultLat =
     riderLocation?.lat ||
     customerLocation?.lat ||
@@ -80,20 +78,80 @@ const LocationMap = ({
 
   const centerPosition = [defaultLat, defaultLng];
 
-  // Build route line points if multiple locations are provided
-  const routePoints = [];
-  if (shopLocation?.lat && shopLocation?.lng) {
-    routePoints.push([shopLocation.lat, shopLocation.lng]);
+  // Collect all waypoints in order: Shop(s) -> Rider (if active) -> Customer
+  const waypoints = [];
+  if (Array.isArray(additionalShops) && additionalShops.length > 0) {
+    additionalShops.forEach((s) => {
+      if (s?.location?.lat && s?.location?.lng) {
+        waypoints.push({ lat: s.location.lat, lng: s.location.lng, name: s.name });
+      }
+    });
+  } else if (shopLocation?.lat && shopLocation?.lng) {
+    waypoints.push({ lat: shopLocation.lat, lng: shopLocation.lng, name: shopName });
   }
+
   if (riderLocation?.lat && riderLocation?.lng) {
-    routePoints.push([riderLocation.lat, riderLocation.lng]);
+    waypoints.push({ lat: riderLocation.lat, lng: riderLocation.lng, name: riderName });
   }
+
   if (customerLocation?.lat && customerLocation?.lng) {
-    routePoints.push([customerLocation.lat, customerLocation.lng]);
+    waypoints.push({ lat: customerLocation.lat, lng: customerLocation.lng, name: customerName });
   }
+
+  const waypointsKey = waypoints.map((w) => `${w.lat.toFixed(4)},${w.lng.toFixed(4)}`).join(';');
+
+  // Fetch actual road route from OSRM public driving router
+  useEffect(() => {
+    if (waypoints.length < 2) {
+      setRoadPositions([]);
+      setRouteInfo(null);
+      return;
+    }
+
+    let isCancelled = false;
+    const fetchRoadRoute = async () => {
+      try {
+        const coordsString = waypoints.map((w) => `${w.lng},${w.lat}`).join(';');
+        const url = `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (!isCancelled && data?.routes?.[0]?.geometry?.coordinates) {
+          const latLngs = data.routes[0].geometry.coordinates.map(([lon, latCoord]) => [
+            latCoord,
+            lon,
+          ]);
+          setRoadPositions(latLngs);
+          setRouteInfo({
+            distanceKm: (data.routes[0].distance / 1000).toFixed(1),
+            durationMin: Math.max(1, Math.round(data.routes[0].duration / 60)),
+          });
+        } else if (!isCancelled) {
+          setRoadPositions(waypoints.map((w) => [w.lat, w.lng]));
+        }
+      } catch {
+        if (!isCancelled) {
+          setRoadPositions(waypoints.map((w) => [w.lat, w.lng]));
+        }
+      }
+    };
+
+    fetchRoadRoute();
+    return () => {
+      isCancelled = true;
+    };
+  }, [waypointsKey]);
 
   return (
     <div className="h-full w-full rounded-xl overflow-hidden border border-gray-200 relative z-0">
+      {routeInfo && (
+        <div className="absolute top-3 right-3 z-400 bg-white/95 backdrop-blur-xs px-3 py-1.5 rounded-lg shadow-md border text-xs font-bold text-gray-800 flex items-center gap-2">
+          <span className="text-orange-600">🛣️ {routeInfo.distanceKm} km</span>
+          <span>•</span>
+          <span className="text-blue-600">~{routeInfo.durationMin} mins via road</span>
+        </div>
+      )}
+
       <MapContainer
         center={centerPosition}
         zoom={14}
@@ -107,13 +165,32 @@ const LocationMap = ({
 
         {selectable && <MapClickHandler onSelectLocation={onSelectLocation} />}
 
-        {/* Multi-marker mode for Order Tracking & Rider Route */}
-        {shopLocation?.lat && shopLocation?.lng && (
-          <Marker position={[shopLocation.lat, shopLocation.lng]} icon={shopIcon}>
-            <Popup>
-              <strong>🏪 {shopName}</strong>
-            </Popup>
-          </Marker>
+        {/* Render multiple shops if multi-restaurant order, otherwise primary shop */}
+        {Array.isArray(additionalShops) && additionalShops.length > 0 ? (
+          additionalShops.map(
+            (s, idx) =>
+              s?.location?.lat &&
+              s?.location?.lng && (
+                <Marker
+                  key={s._id || idx}
+                  position={[s.location.lat, s.location.lng]}
+                  icon={shopIcon}
+                >
+                  <Popup>
+                    <strong>🏪 {s.name || 'Restaurant'}</strong>
+                  </Popup>
+                </Marker>
+              )
+          )
+        ) : (
+          shopLocation?.lat &&
+          shopLocation?.lng && (
+            <Marker position={[shopLocation.lat, shopLocation.lng]} icon={shopIcon}>
+              <Popup>
+                <strong>🏪 {shopName}</strong>
+              </Popup>
+            </Marker>
+          )
         )}
 
         {customerLocation?.lat && customerLocation?.lng && (
@@ -135,10 +212,11 @@ const LocationMap = ({
           </Marker>
         )}
 
-        {routePoints.length >= 2 && (
+        {/* Road Path Polyline */}
+        {roadPositions.length >= 2 && (
           <Polyline
-            positions={routePoints}
-            pathOptions={{ color: '#ea580c', weight: 4, dashArray: '8, 8' }}
+            positions={roadPositions}
+            pathOptions={{ color: '#2563eb', weight: 5, opacity: 0.85 }}
           />
         )}
 

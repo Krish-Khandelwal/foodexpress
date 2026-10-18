@@ -17,7 +17,6 @@ export default function CartDrawer({ isOpen, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-xs transition-opacity">
       <div className="w-full max-w-sm bg-white h-full shadow-2xl flex flex-col">
-        {/* Header */}
         <div className="flex justify-between items-center p-4 border-b">
           <h2 className="text-xl font-bold text-gray-800">Your Cart</h2>
           <button
@@ -28,7 +27,6 @@ export default function CartDrawer({ isOpen, onClose }) {
           </button>
         </div>
 
-        {/* Cart Items List */}
         <div className="flex-1 overflow-y-auto p-4">
           {cart.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500">
@@ -50,18 +48,23 @@ export default function CartDrawer({ isOpen, onClose }) {
                     />
                     <div>
                       <p className="font-semibold text-sm text-gray-800">{item.name}</p>
+                      {item.shopName && (
+                        <p className="text-[11px] text-orange-600 font-medium">
+                          {item.shopName}
+                        </p>
+                      )}
                       <p className="text-xs text-gray-500">₹{item.price} each</p>
                       <div className="flex items-center gap-2 mt-1">
                         <button
                           onClick={() => updateQuantity(item.menuItem, -1)}
-                          className="p-1 bg-gray-100 rounded hover:bg-gray-200"
+                          className="p-1 bg-gray-100 rounded hover:bg-gray-200 cursor-pointer"
                         >
                           <Minus size={12} />
                         </button>
                         <span className="text-xs font-bold w-4 text-center">{item.quantity}</span>
                         <button
                           onClick={() => updateQuantity(item.menuItem, 1)}
-                          className="p-1 bg-gray-100 rounded hover:bg-gray-200"
+                          className="p-1 bg-gray-100 rounded hover:bg-gray-200 cursor-pointer"
                         >
                           <Plus size={12} />
                         </button>
@@ -74,7 +77,7 @@ export default function CartDrawer({ isOpen, onClose }) {
                     </span>
                     <button
                       onClick={() => removeFromCart(item.menuItem)}
-                      className="text-red-500 hover:text-red-700 p-1"
+                      className="text-red-500 hover:text-red-700 p-1 cursor-pointer"
                       title="Remove item"
                     >
                       <Trash2 size={15} />
@@ -86,7 +89,6 @@ export default function CartDrawer({ isOpen, onClose }) {
           )}
         </div>
 
-        {/* Footer / Checkout Button */}
         {cart.length > 0 && (
           <div className="p-4 border-t bg-gray-50">
             <div className="flex justify-between font-bold text-xl mb-4 text-gray-800">
@@ -95,7 +97,7 @@ export default function CartDrawer({ isOpen, onClose }) {
             </div>
             <button
               onClick={handleCheckout}
-              className="w-full py-3 bg-orange-600 text-white font-bold rounded-lg hover:bg-orange-700 shadow transition cursor-pointer"
+              className="w-full py-3 bg-orange-600 text-white font-bold rounded-lg hover:bg-orange-700 shadow-xs transition cursor-pointer"
             >
               Proceed to Checkout
             </button>
