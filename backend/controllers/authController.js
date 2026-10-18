@@ -4,7 +4,8 @@ import Shop from '../models/Shop.js';
 import { uploadToCloudinary } from '../config/cloudinary.js';
 
 const generateToken = (id, role) => {
-  return jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  const secret = process.env.JWT_SECRET || 'fallback_jwt_secret_foodexpress';
+  return jwt.sign({ id, role }, secret, { expiresIn: '7d' });
 };
 
 // POST /api/auth/register
@@ -16,7 +17,6 @@ export const registerUser = async (req, res) => {
       password,
       phone,
       role,
-      // Restaurant fields during owner signup
       shopName,
       shopAddress,
       shopPhone,
@@ -25,37 +25,45 @@ export const registerUser = async (req, res) => {
       shopImage,
     } = req.body;
 
-    const userExists = await User.findOne({ email });
-    if (userExists) {
-      return res.status(400).json({ message: 'User already exists' });
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: 'Name, email, and password are required' });
     }
 
+    const normalizedEmail = email.toLowerCase().trim();
+    const userExists = await User.findOne({ email: normalizedEmail });
+    if (userExists) {
+      return res.status(400).json({ message: 'User already exists with this email' });
+    }
+
+    const normalizedRole = (role || 'customer').toLowerCase();
+
     const user = await User.create({
-      name,
-      email,
+      name: name.trim(),
+      email: normalizedEmail,
       password,
-      phone,
-      role: role || 'customer',
+      phone: phone || '',
+      role: normalizedRole,
     });
 
     let shop = null;
-    if (user.role === 'owner' && shopName) {
+    if (user.role === 'owner') {
       let uploadedShopImg = '';
       if (shopImage) {
         uploadedShopImg = await uploadToCloudinary(shopImage);
       }
       shop = await Shop.create({
-        name: shopName,
+        name: shopName || `${user.name}'s Restaurant`,
         address: shopAddress || 'Main Street',
         phone: shopPhone || phone || '',
         description: shopDescription || '',
         cuisine: shopCuisine || 'Multi-Cuisine',
         image: uploadedShopImg,
         owner: user._id,
+        status: 'approved',
       });
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       _id: user._id,
       name: user.name,
       email: user.email,
@@ -65,7 +73,7 @@ export const registerUser = async (req, res) => {
       token: generateToken(user._id, user.role),
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -73,8 +81,11 @@ export const registerUser = async (req, res) => {
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Please provide email and password' });
+    }
 
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user || !(await user.matchPassword(password))) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
@@ -84,7 +95,7 @@ export const loginUser = async (req, res) => {
       shop = await Shop.findOne({ owner: user._id });
     }
 
-    res.json({
+    return res.json({
       _id: user._id,
       name: user.name,
       email: user.email,
@@ -94,23 +105,27 @@ export const loginUser = async (req, res) => {
       token: generateToken(user._id, user.role),
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
 // POST /api/auth/google
 export const googleAuth = async (req, res) => {
   try {
-    const { name, email, photo } = req.body;
-    
-    let user = await User.findOne({ email });
-    
+    const { name, email } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required for Google login' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    let user = await User.findOne({ email: normalizedEmail });
+
     if (!user) {
       user = await User.create({
-        name,
-        email,
-        password: Math.random().toString(36).slice(-8), // random password for google users
-        role: 'customer'
+        name: name || normalizedEmail.split('@')[0],
+        email: normalizedEmail,
+        password: Math.random().toString(36).slice(-10),
+        role: 'customer',
       });
     }
 
@@ -119,26 +134,27 @@ export const googleAuth = async (req, res) => {
       shop = await Shop.findOne({ owner: user._id });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       _id: user._id,
       name: user.name,
       email: user.email,
+      phone: user.phone,
       role: user.role,
       shop,
       token: generateToken(user._id, user.role),
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
 // GET /api/auth/my-shop
 export const getMyShop = async (req, res) => {
   try {
-    const shop = await Shop.findOne({ owner: req.user.id });
-    res.json(shop);
+    const shop = await Shop.findOne({ owner: req.user._id });
+    return res.json(shop);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -146,7 +162,7 @@ export const getMyShop = async (req, res) => {
 export const upsertMyShop = async (req, res) => {
   try {
     const { name, address, phone, description, cuisine, image, isOpen } = req.body;
-    let shop = await Shop.findOne({ owner: req.user.id });
+    let shop = await Shop.findOne({ owner: req.user._id });
 
     let uploadedImg = shop ? shop.image : '';
     if (image && image !== uploadedImg) {
@@ -165,17 +181,18 @@ export const upsertMyShop = async (req, res) => {
     } else {
       shop = await Shop.create({
         name: name || 'My Restaurant',
-        address: address || '',
-        phone: phone || '',
+        address: address || 'Main Street',
+        phone: phone || req.user.phone || '',
         description: description || '',
         cuisine: cuisine || 'Multi-Cuisine',
         image: uploadedImg,
-        owner: req.user.id,
+        owner: req.user._id,
+        status: 'approved',
       });
     }
 
-    res.json({ message: 'Restaurant details saved', shop });
+    return res.json({ message: 'Restaurant details saved', shop });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };

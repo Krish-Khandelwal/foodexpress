@@ -2,9 +2,9 @@ import mongoose from 'mongoose';
 
 const menuItemSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true },
+    name: { type: String, required: true, trim: true },
     description: { type: String, default: '' },
-    price: { type: Number, required: true },
+    price: { type: Number, required: true, min: 0 },
     category: { type: String, default: 'Main Course' },
     image: { type: String, default: '' },
     imageUrl: { type: String, default: '' },
@@ -16,9 +16,9 @@ const menuItemSchema = new mongoose.Schema(
 );
 
 menuItemSchema.pre('save', function () {
-  if (this.isModified('image')) {
+  if (this.isModified('image') && this.image) {
     this.imageUrl = this.image;
-  } else if (this.isModified('imageUrl')) {
+  } else if (this.isModified('imageUrl') && this.imageUrl) {
     this.image = this.imageUrl;
   }
 });

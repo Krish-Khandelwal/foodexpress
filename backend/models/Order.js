@@ -8,18 +8,23 @@ const orderSchema = new mongoose.Schema(
     items: [
       {
         menuItem: { type: mongoose.Schema.Types.ObjectId, ref: 'MenuItem' },
-        name: String,
-        price: Number,
-        quantity: { type: Number, default: 1 },
-        image: String,
+        name: { type: String, required: true },
+        price: { type: Number, required: true },
+        quantity: { type: Number, default: 1, min: 1 },
+        image: { type: String, default: '' },
       },
     ],
-    totalAmount: { type: Number, required: true },
+    totalAmount: { type: Number, required: true, min: 0 },
     deliveryAddress: { type: String, required: true },
     status: {
       type: String,
       enum: ['pending', 'preparing', 'ready', 'out for delivery', 'delivered', 'cancelled'],
       default: 'pending',
+    },
+    paymentMethod: {
+      type: String,
+      enum: ['ONLINE', 'COD'],
+      default: 'COD',
     },
     paymentStatus: {
       type: String,

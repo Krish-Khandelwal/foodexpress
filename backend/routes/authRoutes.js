@@ -1,11 +1,11 @@
 import express from 'express';
-import { protect } from '../middleware/authMiddleware.js'; // Ensure you have this middleware
-import { 
-  registerUser, 
-  loginUser, 
-  googleAuth, 
-  getMyShop, 
-  upsertMyShop 
+import { protect } from '../middleware/authMiddleware.js';
+import {
+  registerUser,
+  loginUser,
+  googleAuth,
+  getMyShop,
+  upsertMyShop,
 } from '../controllers/authController.js';
 
 const router = express.Router();

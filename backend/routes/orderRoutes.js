@@ -10,7 +10,7 @@ import {
   updateOrderStatusByOwner,
   acceptDeliveryByRider,
   verifyPickupOtpByOwner,
-  verifyDeliveryOtpByRider
+  verifyDeliveryOtpByRider,
 } from '../controllers/orderController.js';
 
 const router = express.Router();

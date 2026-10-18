@@ -3,14 +3,18 @@ const initializeSocket = (io) => {
     console.log('Client connected for live tracking:', socket.id);
 
     socket.on('joinOrderRoom', (orderId) => {
-      socket.join(orderId);
+      if (orderId) {
+        socket.join(orderId);
+      }
     });
 
     socket.on('sendLocation', (data) => {
-      io.to(data.orderId).emit('updateLocation', {
-        lat: data.lat,
-        lng: data.lng
-      });
+      if (data?.orderId && data?.lat !== undefined && data?.lng !== undefined) {
+        io.to(data.orderId).emit('updateLocation', {
+          lat: data.lat,
+          lng: data.lng,
+        });
+      }
     });
 
     socket.on('disconnect', () => {

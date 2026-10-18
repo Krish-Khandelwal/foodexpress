@@ -28,3 +28,5 @@ export const restrictTo = (...roles) => {
     next();
   };
 };
+
+export { protect, restrictTo } from './authMiddleware.js';

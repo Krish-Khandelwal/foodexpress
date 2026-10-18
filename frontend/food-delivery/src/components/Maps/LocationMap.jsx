@@ -1,5 +1,5 @@
-import React from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import React, { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -14,15 +14,29 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
-const LocationMap = ({ lat, lng, popupText = "Location" }) => {
-  const centerPosition = [lat || 28.6139, lng || 77.2090]; 
+const RecenterMap = ({ lat, lng }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (lat && lng) {
+      map.setView([lat, lng], map.getZoom());
+    }
+  }, [lat, lng, map]);
+  return null;
+};
+
+const LocationMap = ({ lat, lng, popupText = 'Delivery Location' }) => {
+  const centerPosition = [lat || 28.6139, lng || 77.209];
   return (
-    <div className="h-full w-full">
+    <div className="h-full w-full rounded-lg overflow-hidden">
       <MapContainer center={centerPosition} zoom={15} style={{ height: '100%', width: '100%' }}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        <Marker position={centerPosition}><Popup>{popupText}</Popup></Marker>
+        <RecenterMap lat={centerPosition[0]} lng={centerPosition[1]} />
+        <Marker position={centerPosition}>
+          <Popup>{popupText}</Popup>
+        </Marker>
       </MapContainer>
     </div>
   );
 };
+
 export default LocationMap;
