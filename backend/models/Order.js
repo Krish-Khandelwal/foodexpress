@@ -47,6 +47,10 @@ const orderSchema = new mongoose.Schema(
     razorpayPaymentId: { type: String, default: '' },
     riderOtp: { type: String, default: '' },
     customerOtp: { type: String, default: '' },
+    rating: { type: Number, min: 1, max: 5, default: null },
+    review: { type: String, default: '' },
+    ratedAt: { type: Date, default: null },
+    cancelReason: { type: String, default: '' },
   },
   { timestamps: true }
 );

@@ -1,232 +1,247 @@
 import React, { useEffect, useState } from 'react';
-import {
-  MapContainer,
-  TileLayer,
-  Marker,
-  Popup,
-  Polyline,
-  useMap,
-  useMapEvents,
-} from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Fix default Leaflet icons
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
 
 const createBadgeIcon = (emoji, bgColor) =>
   L.divIcon({
-    className: 'custom-leaflet-marker',
-    html: `<div style="background:${bgColor};width:36px;height:36px;border-radius:9999px;display:flex;align-items:center;justify-content:center;font-size:18px;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);">${emoji}</div>`,
+    className: 'custom-leaflet-pin',
+    html: `<div style="background:${bgColor};width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,0.28);">${emoji}</div>`,
     iconSize: [36, 36],
     iconAnchor: [18, 18],
-    popupAnchor: [0, -18],
   });
 
-const shopIcon = createBadgeIcon('🏪', '#ea580c');
-const customerIcon = createBadgeIcon('🏠', '#16a34a');
+const shopIcon = createBadgeIcon('🍽️', '#ea580c');
 const riderIcon = createBadgeIcon('🛵', '#2563eb');
-const pinIcon = createBadgeIcon('📍', '#e11d48');
+const customerIcon = createBadgeIcon('🏠', '#16a34a');
 
-const RecenterMap = ({ lat, lng }) => {
+const FitBoundsController = ({ points }) => {
   const map = useMap();
   useEffect(() => {
-    if (lat && lng) {
-      map.setView([lat, lng], map.getZoom());
+    if (Array.isArray(points) && points.length >= 2) {
+      const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lng]));
+      map.fitBounds(bounds, { padding: [45, 45], maxZoom: 16 });
+    } else if (Array.isArray(points) && points.length === 1) {
+      map.setView([points[0].lat, points[0].lng], 15);
     }
-  }, [lat, lng, map]);
+  }, [map, JSON.stringify(points)]);
   return null;
 };
 
-const MapClickHandler = ({ onSelectLocation }) => {
-  useMapEvents({
-    click(e) {
-      if (onSelectLocation) {
-        onSelectLocation({ lat: e.latlng.lat, lng: e.latlng.lng });
-      }
-    },
-  });
-  return null;
-};
-
+/**
+ * LocationMap
+ * - viewerRole === 'rider':
+ *   1. Once rider accepts delivery (before pickup code verified, i.e. status !== 'out for delivery'):
+ *      shows ONLY the path from Rider -> Restaurant.
+ *   2. After pickup code is entered (status === 'out for delivery'):
+ *      shows ONLY the path from Rider -> Customer.
+ * - viewerRole === 'customer':
+ *   1. Once rider accepts delivery (hasRider === true):
+ *      shows ONLY the path between Delivery Rider and Customer's address.
+ *   2. Before rider accepts:
+ *      shows Restaurant and Customer markers.
+ */
 const LocationMap = ({
-  lat,
-  lng,
-  popupText = 'Selected Location',
-  selectable = false,
-  onSelectLocation,
   shopLocation,
-  additionalShops = [],
   customerLocation,
   riderLocation,
-  shopName = 'Restaurant (Pickup)',
-  customerName = 'Customer (Delivery)',
-  riderName = 'Delivery Rider (Live)',
+  orderStatus = 'pending',
+  hasRider = false,
+  viewerRole = 'customer',
+  shopName = 'Restaurant',
+  customerAddress = 'Delivery Address',
+  height = '340px',
 }) => {
-  const [roadPositions, setRoadPositions] = useState([]);
-  const [routeInfo, setRouteInfo] = useState(null);
+  const [routeCoords, setRouteCoords] = useState([]);
+  const [routeDistanceKm, setRouteDistanceKm] = useState(null);
+  const [routeDurationMin, setRouteDurationMin] = useState(null);
 
-  const defaultLat =
-    riderLocation?.lat ||
-    customerLocation?.lat ||
-    shopLocation?.lat ||
-    lat ||
-    28.6139;
-  const defaultLng =
-    riderLocation?.lng ||
-    customerLocation?.lng ||
-    shopLocation?.lng ||
-    lng ||
-    77.209;
+  const validShop = {
+    lat: Number(shopLocation?.lat) || 28.6139,
+    lng: Number(shopLocation?.lng) || 77.209,
+  };
+  const validCustomer = {
+    lat: Number(customerLocation?.lat) || 28.625,
+    lng: Number(customerLocation?.lng) || 77.215,
+  };
+  const validRider =
+    riderLocation?.lat && riderLocation?.lng
+      ? { lat: Number(riderLocation.lat), lng: Number(riderLocation.lng) }
+      : hasRider
+      ? { lat: validShop.lat + 0.004, lng: validShop.lng + 0.004 }
+      : null;
 
-  const centerPosition = [defaultLat, defaultLng];
+  const isPickedUp = orderStatus === 'out for delivery' || orderStatus === 'delivered';
+  const riderAssigned = Boolean(hasRider || validRider);
 
-  // Collect all waypoints in order: Shop(s) -> Rider (if active) -> Customer
-  const waypoints = [];
-  if (Array.isArray(additionalShops) && additionalShops.length > 0) {
-    additionalShops.forEach((s) => {
-      if (s?.location?.lat && s?.location?.lng) {
-        waypoints.push({ lat: s.location.lat, lng: s.location.lng, name: s.name });
-      }
-    });
-  } else if (shopLocation?.lat && shopLocation?.lng) {
-    waypoints.push({ lat: shopLocation.lat, lng: shopLocation.lng, name: shopName });
-  }
+  // Determine active path endpoints based on role and order status
+  let startPoint = null;
+  let endPoint = null;
+  let routeLabel = '';
+  let routeColor = '#2563eb';
 
-  if (riderLocation?.lat && riderLocation?.lng) {
-    waypoints.push({ lat: riderLocation.lat, lng: riderLocation.lng, name: riderName });
-  }
-
-  if (customerLocation?.lat && customerLocation?.lng) {
-    waypoints.push({ lat: customerLocation.lat, lng: customerLocation.lng, name: customerName });
-  }
-
-  const waypointsKey = waypoints.map((w) => `${w.lat.toFixed(4)},${w.lng.toFixed(4)}`).join(';');
-
-  // Fetch actual road route from OSRM public driving router
-  useEffect(() => {
-    if (waypoints.length < 2) {
-      setRoadPositions([]);
-      setRouteInfo(null);
-      return;
+  if (viewerRole === 'rider') {
+    if (riderAssigned && !isPickedUp) {
+      // Rider accepted delivery -> first show path to the Restaurant
+      startPoint = validRider;
+      endPoint = validShop;
+      routeLabel = 'Step 1: Route to Restaurant (Enter Pickup Code at Restaurant)';
+      routeColor = '#ea580c';
+    } else if (riderAssigned && isPickedUp) {
+      // After entering pickup code -> show path to Customer location
+      startPoint = validRider || validShop;
+      endPoint = validCustomer;
+      routeLabel = 'Step 2: Route to Customer Location';
+      routeColor = '#2563eb';
     }
+  } else {
+    // Customer side: once rider accepts delivery, ONLY show path between Rider and Customer
+    if (riderAssigned && validRider) {
+      startPoint = validRider;
+      endPoint = validCustomer;
+      routeLabel = 'Live Path: Delivery Rider → Your Address';
+      routeColor = '#2563eb';
+    }
+  }
 
-    let isCancelled = false;
+  useEffect(() => {
+    let isMounted = true;
     const fetchRoadRoute = async () => {
+      if (!startPoint || !endPoint) {
+        setRouteCoords([]);
+        setRouteDistanceKm(null);
+        setRouteDurationMin(null);
+        return;
+      }
+
       try {
-        const coordsString = waypoints.map((w) => `${w.lng},${w.lat}`).join(';');
-        const url = `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson`;
+        const url = `https://router.project-osrm.org/route/v1/driving/${startPoint.lng},${startPoint.lat};${endPoint.lng},${endPoint.lat}?overview=full&geometries=geojson`;
         const res = await fetch(url);
         const data = await res.json();
 
-        if (!isCancelled && data?.routes?.[0]?.geometry?.coordinates) {
-          const latLngs = data.routes[0].geometry.coordinates.map(([lon, latCoord]) => [
-            latCoord,
-            lon,
-          ]);
-          setRoadPositions(latLngs);
-          setRouteInfo({
-            distanceKm: (data.routes[0].distance / 1000).toFixed(1),
-            durationMin: Math.max(1, Math.round(data.routes[0].duration / 60)),
-          });
-        } else if (!isCancelled) {
-          setRoadPositions(waypoints.map((w) => [w.lat, w.lng]));
+        if (isMounted && data?.routes?.[0]?.geometry?.coordinates) {
+          const coords = data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+          setRouteCoords(coords);
+          setRouteDistanceKm((data.routes[0].distance / 1000).toFixed(1));
+          setRouteDurationMin(Math.max(1, Math.round(data.routes[0].duration / 60)));
+          return;
         }
       } catch {
-        if (!isCancelled) {
-          setRoadPositions(waypoints.map((w) => [w.lat, w.lng]));
-        }
+        // Fallback to direct line if OSRM is unreachable
+      }
+
+      if (isMounted) {
+        setRouteCoords([
+          [startPoint.lat, startPoint.lng],
+          [endPoint.lat, endPoint.lng],
+        ]);
       }
     };
 
     fetchRoadRoute();
     return () => {
-      isCancelled = true;
+      isMounted = false;
     };
-  }, [waypointsKey]);
+  }, [startPoint?.lat, startPoint?.lng, endPoint?.lat, endPoint?.lng]);
+
+  // Visible markers based on active stage and role
+  const showShopMarker =
+    viewerRole === 'rider' ? !isPickedUp : !riderAssigned;
+  const showCustomerMarker =
+    viewerRole === 'rider' ? isPickedUp : true;
+  const showRiderMarker = Boolean(riderAssigned && validRider);
+
+  const boundsPoints = [];
+  if (startPoint && endPoint) {
+    boundsPoints.push(startPoint, endPoint);
+  } else {
+    if (showShopMarker) boundsPoints.push(validShop);
+    if (showCustomerMarker) boundsPoints.push(validCustomer);
+    if (showRiderMarker) boundsPoints.push(validRider);
+  }
 
   return (
-    <div className="h-full w-full rounded-xl overflow-hidden border border-gray-200 relative z-0">
-      {routeInfo && (
-        <div className="absolute top-3 right-3 z-400 bg-white/95 backdrop-blur-xs px-3 py-1.5 rounded-lg shadow-md border text-xs font-bold text-gray-800 flex items-center gap-2">
-          <span className="text-orange-600">🛣️ {routeInfo.distanceKm} km</span>
-          <span>•</span>
-          <span className="text-blue-600">~{routeInfo.durationMin} mins via road</span>
+    <div className="w-full rounded-2xl overflow-hidden border border-gray-200 shadow-sm bg-white">
+      <div className="bg-slate-900 text-white px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold">
+        <div className="flex items-center gap-2">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span>
+            {routeLabel ||
+              (viewerRole === 'customer'
+                ? 'Waiting for a Delivery Rider to accept your order...'
+                : 'Accept delivery to view route')}
+          </span>
         </div>
-      )}
+        {routeDistanceKm && (
+          <span className="bg-white/15 px-2.5 py-1 rounded-full text-[11px]">
+            {routeDistanceKm} km • ~{routeDurationMin} mins
+          </span>
+        )}
+      </div>
 
-      <MapContainer
-        center={centerPosition}
-        zoom={14}
-        style={{ height: '100%', width: '100%', minHeight: '260px' }}
-      >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        <RecenterMap lat={defaultLat} lng={defaultLng} />
+      <div style={{ height, width: '100%' }}>
+        <MapContainer
+          center={[validCustomer.lat, validCustomer.lng]}
+          zoom={14}
+          style={{ height: '100%', width: '100%' }}
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
 
-        {selectable && <MapClickHandler onSelectLocation={onSelectLocation} />}
+          <FitBoundsController points={boundsPoints} />
 
-        {/* Render multiple shops if multi-restaurant order, otherwise primary shop */}
-        {Array.isArray(additionalShops) && additionalShops.length > 0 ? (
-          additionalShops.map(
-            (s, idx) =>
-              s?.location?.lat &&
-              s?.location?.lng && (
-                <Marker
-                  key={s._id || idx}
-                  position={[s.location.lat, s.location.lng]}
-                  icon={shopIcon}
-                >
-                  <Popup>
-                    <strong>🏪 {s.name || 'Restaurant'}</strong>
-                  </Popup>
-                </Marker>
-              )
-          )
-        ) : (
-          shopLocation?.lat &&
-          shopLocation?.lng && (
-            <Marker position={[shopLocation.lat, shopLocation.lng]} icon={shopIcon}>
+          {showShopMarker && (
+            <Marker position={[validShop.lat, validShop.lng]} icon={shopIcon}>
               <Popup>
-                <strong>🏪 {shopName}</strong>
+                <strong>🍽️ {shopName}</strong>
+                <br />
+                Restaurant Pickup Point
               </Popup>
             </Marker>
-          )
-        )}
+          )}
 
-        {customerLocation?.lat && customerLocation?.lng && (
-          <Marker
-            position={[customerLocation.lat, customerLocation.lng]}
-            icon={customerIcon}
-          >
-            <Popup>
-              <strong>🏠 {customerName}</strong>
-            </Popup>
-          </Marker>
-        )}
+          {showRiderMarker && (
+            <Marker position={[validRider.lat, validRider.lng]} icon={riderIcon}>
+              <Popup>
+                <strong>🛵 Delivery Rider</strong>
+                <br />
+                {isPickedUp ? 'On the way to customer' : 'Heading to restaurant'}
+              </Popup>
+            </Marker>
+          )}
 
-        {riderLocation?.lat && riderLocation?.lng && (
-          <Marker position={[riderLocation.lat, riderLocation.lng]} icon={riderIcon}>
-            <Popup>
-              <strong>🛵 {riderName}</strong>
-            </Popup>
-          </Marker>
-        )}
+          {showCustomerMarker && (
+            <Marker position={[validCustomer.lat, validCustomer.lng]} icon={customerIcon}>
+              <Popup>
+                <strong>🏠 Customer Address</strong>
+                <br />
+                {customerAddress}
+              </Popup>
+            </Marker>
+          )}
 
-        {/* Road Path Polyline */}
-        {roadPositions.length >= 2 && (
-          <Polyline
-            positions={roadPositions}
-            pathOptions={{ color: '#2563eb', weight: 5, opacity: 0.85 }}
-          />
-        )}
-
-        {/* Single marker mode for Address Selection */}
-        {!shopLocation && !customerLocation && !riderLocation && (
-          <Marker position={centerPosition} icon={pinIcon}>
-            <Popup>{popupText}</Popup>
-          </Marker>
-        )}
-      </MapContainer>
+          {routeCoords.length >= 2 && (
+            <Polyline
+              positions={routeCoords}
+              pathOptions={{
+                color: routeColor,
+                weight: 5,
+                opacity: 0.9,
+              }}
+            />
+          )}
+        </MapContainer>
+      </div>
     </div>
   );
 };

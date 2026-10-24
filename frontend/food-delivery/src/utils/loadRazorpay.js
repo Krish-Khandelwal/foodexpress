@@ -1,4 +1,4 @@
-export const loadRazorpayScript = () => {
+export const loadRazorpay = () => {
   return new Promise((resolve) => {
     if (window.Razorpay) {
       resolve(true);
@@ -11,3 +11,5 @@ export const loadRazorpayScript = () => {
     document.body.appendChild(script);
   });
 };
+
+export default loadRazorpay;

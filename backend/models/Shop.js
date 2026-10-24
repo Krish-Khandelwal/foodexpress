@@ -8,7 +8,7 @@ const shopSchema = new mongoose.Schema(
     phone: { type: String, default: '' },
     cuisine: { type: String, default: 'Multi-Cuisine' },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    isOpen: { type: Boolean, default: true },
+    isOpen: { type: Boolean, default: false },
     location: {
       lat: { type: Number, default: 28.6139 },
       lng: { type: Number, default: 77.209 },
@@ -16,8 +16,10 @@ const shopSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],
-      default: 'approved',
+      default: 'pending',
     },
+    rating: { type: Number, default: 0 },
+    numReviews: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

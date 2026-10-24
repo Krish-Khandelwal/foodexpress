@@ -11,6 +11,8 @@ const menuItemSchema = new mongoose.Schema(
     isAvailable: { type: Boolean, default: true },
     isVeg: { type: Boolean, default: true },
     shop: { type: mongoose.Schema.Types.ObjectId, ref: 'Shop', required: true },
+    rating: { type: Number, default: 0 },
+    numReviews: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

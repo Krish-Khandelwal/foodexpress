@@ -49,6 +49,7 @@ export const registerUser = async (req, res) => {
 
     let shop = null;
     if (user.role === 'owner') {
+      // Newly registered restaurant owners start in 'pending' status for Admin approval
       shop = await Shop.create({
         name: shopName || `${user.name}'s Restaurant`,
         address: shopAddress || 'Connaught Place, New Delhi',
@@ -60,7 +61,8 @@ export const registerUser = async (req, res) => {
           lng: Number(shopLocation?.lng) || 77.209,
         },
         owner: user._id,
-        status: 'approved',
+        status: 'pending',
+        isOpen: false,
       });
     }
 
@@ -78,7 +80,7 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// POST /api/auth/login (Optimized with .lean() and lightweight payload for fast response)
+// POST /api/auth/login
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -86,7 +88,21 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ message: 'Please provide email and password' });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase().trim() }).lean();
+    const normalizedEmail = email.toLowerCase().trim();
+    let user = await User.findOne({ email: normalizedEmail }).lean();
+
+    // Ensure default admin account exists if logging in with admin@foodexpress.com
+    if (!user && normalizedEmail === 'admin@foodexpress.com' && password === 'Admin@123') {
+      const createdAdmin = await User.create({
+        name: 'FoodExpress Admin',
+        email: 'admin@foodexpress.com',
+        password: 'Admin@123',
+        phone: '9999999999',
+        role: 'admin',
+      });
+      user = createdAdmin.toObject();
+    }
+
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
@@ -182,7 +198,9 @@ export const upsertMyShop = async (req, res) => {
           lng: Number(location.lng),
         };
       }
-      if (typeof isOpen === 'boolean') shop.isOpen = isOpen;
+      if (typeof isOpen === 'boolean' && shop.status === 'approved') {
+        shop.isOpen = isOpen;
+      }
       await shop.save();
     } else {
       shop = await Shop.create({
@@ -196,7 +214,8 @@ export const upsertMyShop = async (req, res) => {
           lng: Number(location?.lng) || 77.209,
         },
         owner: req.user._id,
-        status: 'approved',
+        status: 'pending',
+        isOpen: false,
       });
     }
 

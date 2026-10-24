@@ -1,148 +1,127 @@
-import React, { useContext, useState } from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthContext } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { CartProvider } from './context/CartContext';
 import Navbar from './components/Layout/Navbar';
 import CartDrawer from './components/Cart/CartDrawer';
 
-// Pages
-import Login from './pages/Auth/Login';
-import Register from './pages/Auth/Register';
 import Home from './pages/Customer/Home';
 import Checkout from './pages/Customer/Checkout';
 import TrackOrder from './pages/Customer/TrackOrder';
+import Login from './pages/Auth/Login';
+import Register from './pages/Auth/Register';
 import ShopDashboard from './pages/Owner/ShopDashboard';
 import MenuManagement from './pages/Owner/MenuManagement';
 import DeliveryDashboard from './pages/Delivery/DeliveryDashboard';
-import ActiveRoute from './pages/Delivery/ActiveRoute';
 import AdminDashboard from './pages/Admin/AdminDashboard';
 import VendorApprovals from './pages/Admin/VendorApprovals';
 
-const ProtectedRoute = ({ children, allowedRoles }) => {
-  const { user, loading } = useContext(AuthContext);
+const getRoleHomePath = (user) => {
+  if (!user) return '/login';
+  const role = (user.role || 'customer').toLowerCase();
+  if (role === 'admin') return '/admin';
+  if (role === 'owner') return '/owner';
+  if (role === 'rider') return '/delivery';
+  return '/';
+};
+
+const AppRoutes = () => {
+  const { user, loading } = useAuth();
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [showOrdersModal, setShowOrdersModal] = useState(false);
 
   if (loading) {
     return (
-      <div className="p-10 text-center font-bold animate-pulse text-orange-600">
+      <div className="min-h-screen flex items-center justify-center text-gray-500">
         Loading...
       </div>
     );
   }
 
-  if (!user) return <Navigate to="/login" replace />;
-
-  const userRole = user?.role?.toLowerCase();
-
-  if (allowedRoles && !allowedRoles.includes(userRole)) {
-    if (userRole === 'owner') return <Navigate to="/owner-dashboard" replace />;
-    if (userRole === 'rider') return <Navigate to="/delivery-dashboard" replace />;
-    if (userRole === 'admin') return <Navigate to="/admin-dashboard" replace />;
-    return <Navigate to="/" replace />;
-  }
-
-  return children;
-};
-
-const App = () => {
-  const [isCartOpen, setIsCartOpen] = useState(false);
+  const userRole = (user?.role || '').toLowerCase();
 
   return (
-    <Router>
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        <Navbar toggleCart={() => setIsCartOpen((prev) => !prev)} />
-        <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} />
-
-        <main className="flex-1">
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-
-            {/* Customer Routes */}
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute allowedRoles={['customer']}>
-                  <Home toggleCart={() => setIsCartOpen(true)} />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/checkout"
-              element={
-                <ProtectedRoute allowedRoles={['customer']}>
-                  <Checkout />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/track-order/:id"
-              element={
-                <ProtectedRoute allowedRoles={['customer']}>
-                  <TrackOrder />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* Owner Routes */}
-            <Route
-              path="/owner-dashboard"
-              element={
-                <ProtectedRoute allowedRoles={['owner']}>
-                  <ShopDashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/manage-menu"
-              element={
-                <ProtectedRoute allowedRoles={['owner']}>
-                  <MenuManagement />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* Delivery Routes */}
-            <Route
-              path="/delivery-dashboard"
-              element={
-                <ProtectedRoute allowedRoles={['rider']}>
-                  <DeliveryDashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/active-route"
-              element={
-                <ProtectedRoute allowedRoles={['rider']}>
-                  <ActiveRoute />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* Admin Routes */}
-            <Route
-              path="/admin-dashboard"
-              element={
-                <ProtectedRoute allowedRoles={['admin']}>
-                  <AdminDashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin"
-              element={
-                <ProtectedRoute allowedRoles={['admin']}>
-                  <VendorApprovals />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* Fallback Catch-All Route */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </main>
-      </div>
-    </Router>
+    <div className="min-h-screen bg-gray-50 text-gray-900">
+      <Navbar
+        toggleCart={() => setIsCartOpen((prev) => !prev)}
+        onOpenOrders={() => setShowOrdersModal(true)}
+      />
+      {user && userRole === 'customer' && (
+        <CartDrawer
+          isOpen={isCartOpen}
+          onClose={() => setIsCartOpen(false)}
+        />
+      )}
+      <Routes>
+        {/* Login / Signup comes first if user is not logged in */}
+        <Route
+          path="/"
+          element={
+            !user ? (
+              <Navigate to="/login" replace />
+            ) : userRole !== 'customer' ? (
+              <Navigate to={getRoleHomePath(user)} replace />
+            ) : (
+              <Home
+                toggleCart={() => setIsCartOpen(true)}
+                showOrdersModal={showOrdersModal}
+                setShowOrdersModal={setShowOrdersModal}
+              />
+            )
+          }
+        />
+        <Route
+          path="/login"
+          element={user ? <Navigate to={getRoleHomePath(user)} replace /> : <Login />}
+        />
+        <Route
+          path="/register"
+          element={user ? <Navigate to={getRoleHomePath(user)} replace /> : <Register />}
+        />
+        <Route
+          path="/checkout"
+          element={user ? <Checkout /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/track-order/:id"
+          element={user ? <TrackOrder /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/owner"
+          element={user ? <ShopDashboard /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/owner/menu"
+          element={user ? <MenuManagement /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/delivery"
+          element={user ? <DeliveryDashboard /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/admin"
+          element={user ? <AdminDashboard /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/admin/vendors"
+          element={user ? <VendorApprovals /> : <Navigate to="/login" replace />}
+        />
+        <Route path="*" element={<Navigate to={user ? '/' : '/login'} replace />} />
+      </Routes>
+    </div>
   );
 };
+
+function App() {
+  return (
+    <AuthProvider>
+      <CartProvider>
+        <Router>
+          <AppRoutes />
+        </Router>
+      </CartProvider>
+    </AuthProvider>
+  );
+}
 
 export default App;

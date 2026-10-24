@@ -31,7 +31,8 @@ export const createMenuItem = async (req, res) => {
         address: 'Main Street',
         phone: req.user.phone || '',
         owner: req.user._id,
-        status: 'approved',
+        status: 'pending',
+        isOpen: false,
       });
     }
 
@@ -142,10 +143,10 @@ export const getOwnerMenu = async (req, res) => {
 export const getAllMenu = async (req, res) => {
   try {
     const items = await MenuItem.find({ isAvailable: true })
-      .populate('shop', 'name address isOpen status cuisine location')
+      .populate('shop', 'name address isOpen status cuisine location rating numReviews')
       .sort({ createdAt: -1 });
 
-    const visibleItems = items.filter((item) => item.shop?.status !== 'rejected');
+    const visibleItems = items.filter((item) => item.shop?.status === 'approved');
     return res.json(visibleItems);
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -155,7 +156,7 @@ export const getAllMenu = async (req, res) => {
 // GET /api/menu/shops
 export const getApprovedShops = async (req, res) => {
   try {
-    const shops = await Shop.find({ status: { $ne: 'rejected' } }).sort({ createdAt: -1 });
+    const shops = await Shop.find({ status: 'approved' }).sort({ createdAt: -1 });
     return res.json(shops);
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -168,7 +169,7 @@ export const getShopMenu = async (req, res) => {
     const items = await MenuItem.find({
       shop: req.params.shopId,
       isAvailable: true,
-    }).populate('shop', 'name address isOpen location');
+    }).populate('shop', 'name address isOpen status location rating numReviews');
     return res.json(items);
   } catch (error) {
     return res.status(500).json({ message: error.message });

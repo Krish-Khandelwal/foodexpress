@@ -8,6 +8,8 @@ import {
   getRiderOrders,
   getOrderById,
   updateOrderStatusByOwner,
+  cancelOrderByCustomer,
+  rateOrderByCustomer,
   acceptDeliveryByRider,
   updateRiderLocation,
   verifyPickupOtpByOwner,
@@ -23,6 +25,8 @@ router.get('/owner-orders', protect, getOwnerOrders);
 router.get('/rider/available', protect, getRiderOrders);
 router.get('/:id', protect, getOrderById);
 router.put('/:id/status', protect, updateOrderStatusByOwner);
+router.put('/:id/cancel', protect, cancelOrderByCustomer);
+router.post('/:id/rate', protect, rateOrderByCustomer);
 router.put('/:id/accept-delivery', protect, acceptDeliveryByRider);
 router.put('/:id/rider-location', protect, updateRiderLocation);
 router.post('/:id/verify-pickup-otp', protect, verifyPickupOtpByOwner);

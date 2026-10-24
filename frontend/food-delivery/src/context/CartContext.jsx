@@ -1,17 +1,28 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
 
 export const CartContext = createContext();
 
-export const useCart = () => {
-  const context = useContext(CartContext);
-  if (!context) {
-    throw new Error('useCart must be used within a CartProvider');
+export const useCart = () => useContext(CartContext);
+
+const getItemShopId = (item) => {
+  if (!item) return null;
+  if (typeof item.shop === 'object' && item.shop !== null) {
+    return item.shop._id || item.shopId || null;
   }
-  return context;
+  return item.shop || item.shopId || null;
+};
+
+const getItemShopName = (item) => {
+  if (!item) return 'Restaurant';
+  if (typeof item.shop === 'object' && item.shop !== null) {
+    return item.shop.name || item.shopName || 'Restaurant';
+  }
+  return item.shopName || 'Restaurant';
 };
 
 export const CartProvider = ({ children }) => {
-  const [cart, setCart] = useState(() => {
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [cartItems, setCartItems] = useState(() => {
     try {
       const saved = localStorage.getItem('foodexpress_cart');
       return saved ? JSON.parse(saved) : [];
@@ -21,68 +32,110 @@ export const CartProvider = ({ children }) => {
   });
 
   useEffect(() => {
-    localStorage.setItem('foodexpress_cart', JSON.stringify(cart));
-  }, [cart]);
+    localStorage.setItem('foodexpress_cart', JSON.stringify(cartItems));
+  }, [cartItems]);
 
-  // Allows adding items from multiple different restaurants in the same order
+  const openCart = () => setIsCartOpen(true);
+  const closeCart = () => setIsCartOpen(false);
+  const toggleCart = () => setIsCartOpen((prev) => !prev);
+
   const addToCart = (item) => {
-    setCart((prevCart) => {
-      const existingItemIndex = prevCart.findIndex((i) => i.menuItem === item.menuItem);
+    const incomingShopId = getItemShopId(item);
 
-      if (existingItemIndex > -1) {
-        const newCart = [...prevCart];
-        newCart[existingItemIndex] = {
-          ...newCart[existingItemIndex],
-          quantity: newCart[existingItemIndex].quantity + (item.quantity || 1),
-        };
-        return newCart;
+    // Enforce ordering from only 1 restaurant at a time
+    if (cartItems.length > 0) {
+      const currentShopId = getItemShopId(cartItems[0]);
+      if (
+        currentShopId &&
+        incomingShopId &&
+        String(currentShopId) !== String(incomingShopId)
+      ) {
+        const currentShopName = getItemShopName(cartItems[0]);
+        alert(
+          `You can only order food from 1 restaurant at a time! Your cart currently has food from "${currentShopName}". Please complete or clear your current order first.`
+        );
+        return false;
       }
+    }
 
-      return [...prevCart, { ...item, quantity: item.quantity || 1 }];
+    setCartItems((prev) => {
+      const exists = prev.find((i) => i._id === item._id);
+      if (exists) {
+        return prev.map((i) =>
+          i._id === item._id ? { ...i, quantity: i.quantity + 1 } : i
+        );
+      }
+      return [
+        ...prev,
+        {
+          ...item,
+          shopId: incomingShopId,
+          shopName: getItemShopName(item),
+          quantity: item.quantity ? Number(item.quantity) : 1,
+        },
+      ];
     });
+    return true;
   };
 
-  const updateQuantity = (menuItemId, delta) => {
-    setCart((prevCart) =>
-      prevCart
+  const removeFromCart = (id) => {
+    setCartItems((prev) => prev.filter((item) => item._id !== id));
+  };
+
+  const updateQuantity = (id, delta) => {
+    setCartItems((prev) =>
+      prev
         .map((item) =>
-          item.menuItem === menuItemId
-            ? { ...item, quantity: item.quantity + delta }
+          item._id === id
+            ? { ...item, quantity: Math.max(0, item.quantity + delta) }
             : item
         )
         .filter((item) => item.quantity > 0)
     );
   };
 
-  const removeFromCart = (menuItemId) => {
-    setCart((prevCart) => prevCart.filter((item) => item.menuItem !== menuItemId));
-  };
-
   const clearCart = () => {
-    setCart([]);
+    setCartItems([]);
     localStorage.removeItem('foodexpress_cart');
   };
 
-  const cartTotal = cart.reduce(
-    (total, item) => total + Number(item.price) * Number(item.quantity),
-    0
+  const cartTotal = useMemo(
+    () =>
+      cartItems.reduce(
+        (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1),
+        0
+      ),
+    [cartItems]
   );
-  const cartCount = cart.reduce((count, item) => count + Number(item.quantity), 0);
+
+  const cartCount = useMemo(
+    () => cartItems.reduce((sum, item) => sum + Number(item.quantity || 1), 0),
+    [cartItems]
+  );
 
   return (
     <CartContext.Provider
       value={{
-        cart,
-        cartItems: cart,
-        cartCount,
+        cart: cartItems,
+        cartItems,
+        isCartOpen,
+        setIsCartOpen,
+        openCart,
+        closeCart,
+        toggleCart,
         addToCart,
-        updateQuantity,
         removeFromCart,
+        updateQuantity,
         clearCart,
         cartTotal,
+        totalPrice: cartTotal,
+        totalAmount: cartTotal,
+        cartCount,
       }}
     >
       {children}
     </CartContext.Provider>
   );
 };
+
+export default CartContext;

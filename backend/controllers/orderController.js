@@ -31,7 +31,7 @@ export const createRazorpayOrder = async (req, res) => {
   }
 };
 
-// POST /api/orders (Supports ordering from 1 or multiple restaurants in the same order)
+// POST /api/orders (Enforces ordering from 1 restaurant at a time)
 export const createOrder = async (req, res) => {
   try {
     const {
@@ -50,16 +50,17 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ message: 'Order must contain at least one item' });
     }
 
-    // Resolve shopId for each item so multi-restaurant orders work seamlessly
     const enrichedItems = [];
     const shopIdSet = new Set();
 
     for (const item of items) {
-      let itemShopId = item.shopId || item.shop;
-      let itemShopName = item.shopName || '';
+      let itemShopId = item.shopId || item.shop?._id || item.shop;
+      let itemShopName = item.shopName || item.shop?.name || '';
 
-      if (!itemShopId && item.menuItem) {
-        const dbItem = await MenuItem.findById(item.menuItem).populate('shop', 'name').lean();
+      if (!itemShopId && (item.menuItem || item._id)) {
+        const dbItem = await MenuItem.findById(item.menuItem || item._id)
+          .populate('shop', 'name')
+          .lean();
         if (dbItem?.shop) {
           itemShopId = dbItem.shop._id || dbItem.shop;
           itemShopName = dbItem.shop.name || '';
@@ -71,23 +72,29 @@ export const createOrder = async (req, res) => {
       }
 
       enrichedItems.push({
-        menuItem: item.menuItem,
+        menuItem: item.menuItem || item._id,
         shop: itemShopId || undefined,
         shopName: itemShopName,
         name: item.name,
         price: Number(item.price),
         quantity: Number(item.quantity || 1),
-        image: item.image || '',
+        image: item.image || item.imageUrl || '',
         isVeg: item.isVeg !== undefined ? Boolean(item.isVeg) : true,
       });
     }
 
-    if (shopId) {
+    if (shopId && shopIdSet.size === 0) {
       shopIdSet.add(shopId.toString());
     }
 
+    if (shopIdSet.size > 1) {
+      return res.status(400).json({
+        message: 'You can only order food from 1 restaurant at a time!',
+      });
+    }
+
     if (shopIdSet.size === 0) {
-      const fallbackShop = await Shop.findOne().lean();
+      const fallbackShop = await Shop.findOne({ status: 'approved' }).lean();
       if (fallbackShop) {
         shopIdSet.add(fallbackShop._id.toString());
       }
@@ -111,10 +118,16 @@ export const createOrder = async (req, res) => {
     }
 
     const customerOtp = generateOTP();
+    const riderOtp = generateOTP();
     const calculatedTotal =
       totalAmount !== undefined
         ? Number(totalAmount)
         : enrichedItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+
+    const formattedAddress =
+      typeof deliveryAddress === 'object'
+        ? deliveryAddress.street || 'Customer Address'
+        : deliveryAddress || 'Customer Address';
 
     const order = await Order.create({
       customer: req.user._id,
@@ -122,22 +135,23 @@ export const createOrder = async (req, res) => {
       shops: uniqueShopIds,
       items: enrichedItems,
       totalAmount: calculatedTotal,
-      deliveryAddress: deliveryAddress || 'Customer Address',
+      deliveryAddress: formattedAddress,
       customerLocation: {
-        lat: Number(customerLocation?.lat) || 28.625,
-        lng: Number(customerLocation?.lng) || 77.215,
+        lat: Number(customerLocation?.lat ?? deliveryAddress?.lat) || 28.6139,
+        lng: Number(customerLocation?.lng ?? deliveryAddress?.lng) || 77.209,
       },
       status: 'pending',
       paymentMethod: paymentMethod || (razorpayPaymentId ? 'ONLINE' : 'COD'),
       paymentStatus: razorpayPaymentId ? 'paid' : 'pending',
       razorpayOrderId: razorpayOrderId || '',
       razorpayPaymentId: razorpayPaymentId || '',
+      riderOtp,
       customerOtp,
     });
 
     const populatedOrder = await Order.findById(order._id)
       .populate('customer', 'name email phone')
-      .populate('shop', 'name address phone location')
+      .populate('shop', 'name address phone location rating numReviews')
       .populate('shops', 'name address phone location')
       .populate('rider', 'name phone');
 
@@ -152,7 +166,7 @@ export const getOrderById = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
       .populate('customer', 'name email phone')
-      .populate('shop', 'name address phone location')
+      .populate('shop', 'name address phone location rating numReviews')
       .populate('shops', 'name address phone location')
       .populate('rider', 'name phone');
 
@@ -167,7 +181,7 @@ export const getOrderById = async (req, res) => {
 export const getCustomerOrders = async (req, res) => {
   try {
     const orders = await Order.find({ customer: req.user._id })
-      .populate('shop', 'name address phone location')
+      .populate('shop', 'name address phone location rating numReviews')
       .populate('shops', 'name address phone location')
       .populate('rider', 'name phone')
       .sort({ createdAt: -1 });
@@ -177,7 +191,7 @@ export const getCustomerOrders = async (req, res) => {
   }
 };
 
-// GET /api/orders/owner-orders
+// GET /api/orders/owner-orders (Includes riderOtp so Restaurant Owner can see Pickup Code)
 export const getOwnerOrders = async (req, res) => {
   try {
     const shop = await Shop.findOne({ owner: req.user._id }).lean();
@@ -194,7 +208,7 @@ export const getOwnerOrders = async (req, res) => {
 
     const sanitized = orders.map((o) => {
       const obj = o.toObject();
-      delete obj.riderOtp;
+      // Keep obj.riderOtp for Restaurant Owner screen; hide customerOtp
       delete obj.customerOtp;
       return obj;
     });
@@ -218,6 +232,9 @@ export const updateOrderStatusByOwner = async (req, res) => {
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
     order.status = status;
+    if (status === 'ready' && !order.riderOtp) {
+      order.riderOtp = generateOTP();
+    }
     await order.save();
     return res.json(order);
   } catch (error) {
@@ -225,11 +242,123 @@ export const updateOrderStatusByOwner = async (req, res) => {
   }
 };
 
-// PUT /api/orders/:id/accept-delivery
+// PUT /api/orders/:id/cancel (Customer cancels order)
+export const cancelOrderByCustomer = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id)
+      .populate('customer', 'name email phone')
+      .populate('shop', 'name address phone location')
+      .populate('rider', 'name phone');
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    if (
+      order.customer._id.toString() !== req.user._id.toString() &&
+      req.user.role !== 'admin'
+    ) {
+      return res.status(403).json({ message: 'Not authorized to cancel this order' });
+    }
+
+    if (order.status === 'delivered') {
+      return res.status(400).json({ message: 'Delivered orders cannot be cancelled' });
+    }
+
+    if (order.status === 'cancelled') {
+      return res.status(400).json({ message: 'Order is already cancelled' });
+    }
+
+    order.status = 'cancelled';
+    order.cancelReason = req.body?.reason || 'Cancelled by customer';
+    await order.save();
+
+    return res.json({ message: 'Order cancelled successfully', order });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// POST /api/orders/:id/rate (Customer rates food quality)
+export const rateOrderByCustomer = async (req, res) => {
+  try {
+    const { rating, review } = req.body;
+    const numericRating = Number(rating);
+
+    if (!numericRating || numericRating < 1 || numericRating > 5) {
+      return res.status(400).json({ message: 'Please provide a valid rating between 1 and 5' });
+    }
+
+    const order = await Order.findById(req.params.id)
+      .populate('customer', 'name email phone')
+      .populate('shop', 'name address phone location rating numReviews')
+      .populate('rider', 'name phone');
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    if (order.customer._id.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized to rate this order' });
+    }
+
+    if (order.status === 'cancelled') {
+      return res.status(400).json({ message: 'Cancelled orders cannot be rated' });
+    }
+
+    order.rating = numericRating;
+    order.review = (review || '').trim();
+    order.ratedAt = new Date();
+    await order.save();
+
+    if (order.shop?._id) {
+      const ratedOrders = await Order.find({
+        shop: order.shop._id,
+        rating: { $ne: null },
+      }).select('rating');
+
+      if (ratedOrders.length > 0) {
+        const avg =
+          ratedOrders.reduce((acc, cur) => acc + Number(cur.rating), 0) / ratedOrders.length;
+        await Shop.findByIdAndUpdate(order.shop._id, {
+          rating: Number(avg.toFixed(1)),
+          numReviews: ratedOrders.length,
+        });
+      }
+    }
+
+    for (const item of order.items) {
+      if (item.menuItem) {
+        const menuDoc = await MenuItem.findById(item.menuItem);
+        if (menuDoc) {
+          const prevCount = menuDoc.numReviews || 0;
+          const prevRating = menuDoc.rating || 0;
+          const newCount = prevCount + 1;
+          const newAvg = (prevRating * prevCount + numericRating) / newCount;
+          menuDoc.rating = Number(newAvg.toFixed(1));
+          menuDoc.numReviews = newCount;
+          await menuDoc.save();
+        }
+      }
+    }
+
+    return res.json({ message: 'Thank you for rating the food quality!', order });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// PUT /api/orders/:id/accept-delivery (Only allowed when order status is 'ready')
 export const acceptDeliveryByRider = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id).populate('shop', 'location');
     if (!order) return res.status(404).json({ message: 'Order not found' });
+
+    if (order.status !== 'ready') {
+      return res.status(400).json({
+        message: 'Delivery can only be accepted after the Restaurant Owner marks the order Ready.',
+      });
+    }
 
     if (order.rider && order.rider.toString() !== req.user._id.toString()) {
       return res.status(400).json({ message: 'Already accepted by another rider' });
@@ -239,14 +368,33 @@ export const acceptDeliveryByRider = async (req, res) => {
     if (!order.riderOtp) {
       order.riderOtp = generateOTP();
     }
-    if (!order.riderLocation?.lat) {
+
+    const { lat, lng } = req.body || {};
+    if (lat !== undefined && lng !== undefined && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
       order.riderLocation = {
-        lat: (order.shop?.location?.lat || 28.6139) + 0.002,
-        lng: (order.shop?.location?.lng || 77.209) + 0.002,
+        lat: Number(lat),
+        lng: Number(lng),
+      };
+    } else if (!order.riderLocation?.lat) {
+      order.riderLocation = {
+        lat: (order.shop?.location?.lat || 28.6139) + 0.004,
+        lng: (order.shop?.location?.lng || 77.209) + 0.004,
       };
     }
+
     await order.save();
-    return res.json(order);
+
+    const populated = await Order.findById(order._id)
+      .populate('customer', 'name phone')
+      .populate('shop', 'name address phone location')
+      .populate('shops', 'name address phone location')
+      .populate('rider', 'name phone');
+
+    const sanitized = populated.toObject();
+    delete sanitized.riderOtp;
+    delete sanitized.customerOtp;
+
+    return res.json(sanitized);
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -256,6 +404,10 @@ export const acceptDeliveryByRider = async (req, res) => {
 export const updateRiderLocation = async (req, res) => {
   try {
     const { lat, lng } = req.body;
+    if (lat === undefined || lng === undefined) {
+      return res.status(400).json({ message: 'Latitude and longitude are required' });
+    }
+
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
@@ -273,22 +425,39 @@ export const updateRiderLocation = async (req, res) => {
 // POST /api/orders/:id/verify-pickup-otp
 export const verifyPickupOtpByOwner = async (req, res) => {
   try {
-    const { otp } = req.body;
+    const { otp, lat, lng } = req.body;
     const order = await Order.findById(req.params.id).populate('shop', 'location');
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
     if (!order.rider) return res.status(400).json({ message: 'No rider assigned yet.' });
     if (!otp || order.riderOtp !== otp.trim()) {
-      return res.status(400).json({ message: 'Invalid Pickup OTP.' });
+      return res.status(400).json({ message: 'Invalid Pickup Code.' });
     }
 
     order.status = 'out for delivery';
-    order.riderLocation = {
-      lat: order.shop?.location?.lat || 28.6139,
-      lng: order.shop?.location?.lng || 77.209,
-    };
+    if (lat !== undefined && lng !== undefined && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
+      order.riderLocation = {
+        lat: Number(lat),
+        lng: Number(lng),
+      };
+    } else {
+      order.riderLocation = {
+        lat: order.shop?.location?.lat || 28.6139,
+        lng: order.shop?.location?.lng || 77.209,
+      };
+    }
     await order.save();
-    return res.json({ message: 'Order is Out for Delivery.', order });
+
+    const populated = await Order.findById(order._id)
+      .populate('customer', 'name phone')
+      .populate('shop', 'name address phone location')
+      .populate('shops', 'name address phone location')
+      .populate('rider', 'name phone');
+
+    return res.json({
+      message: 'Pickup code verified! Showing path to customer location.',
+      order: populated,
+    });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -320,12 +489,12 @@ export const verifyDeliveryOtpByRider = async (req, res) => {
   }
 };
 
-// GET /api/orders/rider/available
+// GET /api/orders/rider/available (Only shows unassigned orders when status === 'ready')
 export const getRiderOrders = async (req, res) => {
   try {
     const orders = await Order.find({
       $or: [
-        { status: { $in: ['preparing', 'ready'] }, rider: null },
+        { status: 'ready', rider: null },
         { rider: req.user._id },
       ],
     })
@@ -334,8 +503,10 @@ export const getRiderOrders = async (req, res) => {
       .populate('shops', 'name address phone location')
       .sort({ createdAt: -1 });
 
+    // Hide both riderOtp and customerOtp from Rider screen response
     const sanitized = orders.map((o) => {
       const obj = o.toObject();
+      delete obj.riderOtp;
       delete obj.customerOtp;
       return obj;
     });

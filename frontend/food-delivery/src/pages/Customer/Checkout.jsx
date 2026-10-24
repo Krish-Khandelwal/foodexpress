@@ -1,37 +1,129 @@
-import React, { useState, useContext } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, MapPin } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { MapPin, Navigation, CreditCard, Banknote } from 'lucide-react';
+import API from '../../api/axios';
 import { useCart } from '../../context/CartContext';
-import { AuthContext } from '../../context/AuthContext';
-import api from '../../api/axios';
-import { loadRazorpayScript } from '../../utils/loadRazorpay';
-import LocationMap from '../../components/Maps/LocationMap';
+import { loadRazorpay } from '../../utils/loadRazorpay';
+
+const customerPinIcon = L.divIcon({
+  className: 'checkout-location-pin',
+  html: `<div style="background:#ea580c;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,0.3);">📍</div>`,
+  iconSize: [36, 36],
+  iconAnchor: [18, 18],
+});
+
+// Helper to ensure address is strictly in English (removes any Hindi/Devanagari script)
+const formatEnglishAddress = (rawText, addressObj = {}) => {
+  if (addressObj && Object.keys(addressObj).length > 0) {
+    const parts = [
+      addressObj.house_number,
+      addressObj.road || addressObj.pedestrian || addressObj.suburb,
+      addressObj.neighbourhood || addressObj.residential,
+      addressObj.city_district || addressObj.Variables,
+      addressObj.city || addressObj.town || addressObj.state_district || 'New Delhi',
+      addressObj.state || 'Delhi',
+      addressObj.postcode,
+    ]
+      .filter(Boolean)
+      .map((part) => String(part).replace(/[\u0900-\u097F]+/g, '').trim())
+      .filter(Boolean);
+
+    if (parts.length >= 2) {
+      return [...new Set(parts)].join(', ');
+    }
+  }
+
+  if (!rawText) return '';
+  const cleaned = String(rawText)
+    .replace(/[\u0900-\u097F]+/g, '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(', ');
+
+  return cleaned || 'New Delhi, Delhi, India';
+};
+
+const RecenterMap = ({ position }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (position?.lat && position?.lng) {
+      map.setView([position.lat, position.lng], map.getZoom() || 15);
+    }
+  }, [position?.lat, position?.lng, map]);
+  return null;
+};
+
+const DraggableLocationMarker = ({ position, onLocationSelect }) => {
+  const markerRef = useRef(null);
+
+  useMapEvents({
+    click(e) {
+      onLocationSelect(e.latlng.lat, e.latlng.lng);
+    },
+  });
+
+  const eventHandlers = useMemo(
+    () => ({
+      dragend() {
+        const marker = markerRef.current;
+        if (marker != null) {
+          const latlng = marker.getLatLng();
+          onLocationSelect(latlng.lat, latlng.lng);
+        }
+      },
+    }),
+    [onLocationSelect]
+  );
+
+  return (
+    <Marker
+      draggable={true}
+      eventHandlers={eventHandlers}
+      position={[position.lat, position.lng]}
+      ref={markerRef}
+      icon={customerPinIcon}
+    />
+  );
+};
 
 const Checkout = () => {
-  const { cart, cartTotal, clearCart } = useCart();
-  const { user } = useContext(AuthContext);
-  const navigate = useNavigate();
-
-  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const { cartItems, cartTotal, clearCart } = useCart();
+  const [deliveryAddress, setDeliveryAddress] = useState('Connaught Place, New Delhi');
   const [customerLocation, setCustomerLocation] = useState({
     lat: 28.6139,
     lng: 77.209,
   });
-  const [detectingGps, setDetectingGps] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('COD');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [locationNotice, setLocationNotice] = useState('');
+  const navigate = useNavigate();
 
-  // Reverse geocode strictly in English using accept-language=en
-  const reverseGeocodeInEnglish = async (lat, lng) => {
+  const deliveryFee = cartTotal > 0 ? 40 : 0;
+  const taxes = Math.round(cartTotal * 0.05);
+  const grandTotal = cartTotal + deliveryFee + taxes;
+
+  // Fetches address strictly in English from OpenStreetMap Nominatim
+  const reverseGeocodeAndFill = async (lat, lng) => {
+    setCustomerLocation({ lat, lng });
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=en`
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=en`,
+        {
+          headers: {
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
+        }
       );
       const data = await res.json();
-      if (data?.display_name) {
-        setDeliveryAddress(data.display_name);
+      if (data?.display_name || data?.address) {
+        const englishAddr = formatEnglishAddress(data.display_name, data.address);
+        setDeliveryAddress(
+          englishAddr || `Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}`
+        );
       } else {
         setDeliveryAddress(`Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}`);
       }
@@ -40,276 +132,252 @@ const Checkout = () => {
     }
   };
 
-  const handleMapSelect = async ({ lat, lng }) => {
-    setLocationNotice('');
-    setCustomerLocation({ lat, lng });
-    await reverseGeocodeInEnglish(lat, lng);
-  };
-
-  const handleDetectGps = () => {
+  const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
-      setLocationNotice('Geolocation is not supported by your browser. Click on the map instead.');
+      alert('Geolocation is not supported by your browser.');
       return;
     }
-    setDetectingGps(true);
-    setLocationNotice('');
+    setLocating(true);
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords;
-        setCustomerLocation({ lat: latitude, lng: longitude });
-        await reverseGeocodeInEnglish(latitude, longitude);
-        setDetectingGps(false);
+        await reverseGeocodeAndFill(latitude, longitude);
+        setLocating(false);
       },
       () => {
-        setLocationNotice('Could not access GPS. Click anywhere on the map below to set your location.');
-        setDetectingGps(false);
-      }
+        alert(
+          'Unable to retrieve your current location. Please allow location access or click on the map.'
+        );
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
     );
-  };
-
-  if (cart.length === 0) {
-    return (
-      <div className="max-w-xl mx-auto my-16 p-8 bg-white rounded-xl shadow-xs border text-center">
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Your Cart is Empty</h2>
-        <p className="text-gray-600 mb-6">Add some delicious food items before checking out.</p>
-        <Link
-          to="/"
-          className="inline-block px-6 py-2.5 bg-orange-600 text-white font-bold rounded-lg hover:bg-orange-700"
-        >
-          ← Back to Home
-        </Link>
-      </div>
-    );
-  }
-
-  const placeFinalOrder = async (paymentDetails = {}) => {
-    const orderPayload = {
-      shopId: cart[0]?.shopId,
-      items: cart.map((item) => ({
-        menuItem: item.menuItem,
-        shopId: item.shopId,
-        shopName: item.shopName || '',
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        image: item.image,
-        isVeg: item.isVeg !== false,
-      })),
-      totalAmount: cartTotal,
-      deliveryAddress,
-      customerLocation,
-      paymentMethod,
-      ...paymentDetails,
-    };
-
-    const { data } = await api.post('/orders', orderPayload);
-    clearCart();
-    const createdId = data?._id || data?.order?._id || 'latest';
-    navigate(`/track-order/${createdId}`);
   };
 
   const handlePlaceOrder = async (e) => {
     e.preventDefault();
-    if (!deliveryAddress.trim()) {
-      setError('Please enter your delivery address or select it on the map');
+    if (cartItems.length === 0) return;
+
+    const shopIds = new Set(
+      cartItems
+        .map((i) => i.shopId || i.shop?._id || i.shop)
+        .filter(Boolean)
+        .map(String)
+    );
+    if (shopIds.size > 1) {
+      alert('You can only order food from 1 restaurant at a time!');
       return;
     }
 
+    const cleanAddress = formatEnglishAddress(deliveryAddress) || deliveryAddress;
+
     setLoading(true);
-    setError('');
-
     try {
+      const primaryShopId =
+        cartItems[0]?.shopId || cartItems[0]?.shop?._id || cartItems[0]?.shop;
+
       if (paymentMethod === 'ONLINE') {
-        const sdkLoaded = await loadRazorpayScript();
+        const sdkLoaded = await loadRazorpay();
         if (!sdkLoaded) {
-          throw new Error('Failed to load Razorpay SDK. Check your internet connection or use COD.');
+          alert('Razorpay SDK failed to load. Switching to Cash on Delivery.');
+        } else {
+          const { data: rzpOrder } = await API.post('/orders/create-razorpay-order', {
+            amount: grandTotal,
+          });
+          const options = {
+            key: rzpOrder.keyId,
+            amount: rzpOrder.amount,
+            currency: rzpOrder.currency,
+            name: 'FoodExpress',
+            description: 'Food Order Payment',
+            order_id: rzpOrder.id,
+            handler: async (response) => {
+              const { data } = await API.post('/orders', {
+                shopId: primaryShopId,
+                items: cartItems,
+                totalAmount: grandTotal,
+                deliveryAddress: cleanAddress,
+                customerLocation,
+                paymentMethod: 'ONLINE',
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+              });
+              clearCart();
+              navigate(`/track-order/${data.order?._id || data._id}`);
+            },
+          };
+          const rzp = new window.Razorpay(options);
+          rzp.open();
+          setLoading(false);
+          return;
         }
-
-        const { data: rzpOrder } = await api.post('/orders/create-razorpay-order', {
-          amount: cartTotal,
-        });
-
-        const options = {
-          key: rzpOrder.keyId || import.meta.env.VITE_RAZORPAY_KEY_ID,
-          amount: rzpOrder.amount,
-          currency: rzpOrder.currency || 'INR',
-          name: 'FoodExpress',
-          description: 'Food Order Payment',
-          order_id: rzpOrder.id,
-          handler: async (response) => {
-            await placeFinalOrder({
-              razorpayOrderId: response.razorpay_order_id,
-              razorpayPaymentId: response.razorpay_payment_id,
-              razorpaySignature: response.razorpay_signature,
-            });
-          },
-          prefill: {
-            name: user?.name || '',
-            email: user?.email || '',
-            contact: user?.phone || '',
-          },
-          theme: { color: '#ea580c' },
-        };
-
-        const paymentObject = new window.Razorpay(options);
-        paymentObject.open();
-      } else {
-        await placeFinalOrder();
       }
+
+      const { data } = await API.post('/orders', {
+        shopId: primaryShopId,
+        items: cartItems,
+        totalAmount: grandTotal,
+        deliveryAddress: cleanAddress,
+        customerLocation,
+        paymentMethod: 'COD',
+      });
+      clearCart();
+      navigate(`/track-order/${data.order?._id || data._id}`);
     } catch (err) {
-      setError(
-        err.response?.data?.message ||
-          err.message ||
-          'Failed to process checkout. Try Cash on Delivery.'
-      );
+      alert(err.response?.data?.message || 'Failed to place order');
     } finally {
       setLoading(false);
     }
   };
 
-  // Group items by restaurant for clear display
-  const uniqueRestaurants = [...new Set(cart.map((i) => i.shopName).filter(Boolean))];
-
   return (
-    <div className="max-w-5xl mx-auto p-6 my-4">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Checkout</h1>
-        <Link
-          to="/"
-          className="flex items-center gap-1.5 px-4 py-2 bg-white border rounded-lg text-sm font-bold text-orange-600 hover:bg-orange-50 shadow-2xs"
-        >
-          <ArrowLeft size={16} />
-          <span>Back to Home</span>
-        </Link>
-      </div>
+    <div className="max-w-3xl mx-auto p-4 sm:p-6">
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm space-y-6">
+        <h1 className="text-2xl font-extrabold text-gray-900">Checkout</h1>
 
-      {error && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 border border-red-200 text-sm font-medium">
-          {error}
-        </div>
-      )}
+        <form onSubmit={handlePlaceOrder} className="space-y-6">
+          {/* Delivery Address + Interactive Map & Current Location Button */}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="block text-sm font-bold text-gray-700">
+                Delivery Address (Click or drag marker on map, or use current location)
+              </label>
+              <button
+                type="button"
+                onClick={handleUseCurrentLocation}
+                disabled={locating}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl cursor-pointer transition disabled:opacity-50"
+              >
+                <Navigation size={14} />
+                {locating ? 'Detecting Location...' : 'Upload Current Location'}
+              </button>
+            </div>
 
-      {locationNotice && (
-        <div className="bg-amber-50 text-amber-800 p-3 rounded-lg mb-4 border border-amber-200 text-xs font-medium">
-          {locationNotice}
-        </div>
-      )}
+            <div className="rounded-2xl overflow-hidden border border-gray-300 h-64">
+              <MapContainer
+                center={[customerLocation.lat, customerLocation.lng]}
+                zoom={14}
+                style={{ height: '100%', width: '100%' }}
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                <RecenterMap position={customerLocation} />
+                <DraggableLocationMarker
+                  position={customerLocation}
+                  onLocationSelect={reverseGeocodeAndFill}
+                />
+              </MapContainer>
+            </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: Delivery Location Map & Form */}
-        <form
-          onSubmit={handlePlaceOrder}
-          className="bg-white p-6 rounded-xl shadow-xs border border-gray-200 space-y-4"
-        >
-          <div className="flex justify-between items-center border-b pb-2">
-            <h2 className="text-lg font-bold text-gray-800">1. Choose Delivery Location</h2>
-            <button
-              type="button"
-              onClick={handleDetectGps}
-              disabled={detectingGps}
-              className="flex items-center gap-1 text-xs font-bold bg-orange-50 text-orange-600 px-3 py-1.5 rounded-lg hover:bg-orange-100 cursor-pointer"
-            >
-              <MapPin size={14} />
-              <span>{detectingGps ? 'Detecting GPS...' : 'Use Current GPS Location'}</span>
-            </button>
+            <div className="relative">
+              <MapPin
+                size={18}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-orange-600"
+              />
+              <input
+                type="text"
+                required
+                placeholder="Select on map or type your full delivery address in English..."
+                value={deliveryAddress}
+                onChange={(e) => setDeliveryAddress(e.target.value)}
+                className="w-full border border-gray-300 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+            </div>
+            <p className="text-xs text-gray-400">
+              Selected Coordinates: {customerLocation.lat.toFixed(5)},{' '}
+              {customerLocation.lng.toFixed(5)}
+            </p>
           </div>
 
-          <p className="text-xs text-gray-500">
-            Click anywhere on the map below to pin your exact delivery location (address auto-fills in English):
-          </p>
-
-          <div className="h-64 w-full">
-            <LocationMap
-              lat={customerLocation.lat}
-              lng={customerLocation.lng}
-              popupText="Your Delivery Pin"
-              selectable
-              onSelectLocation={handleMapSelect}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Full Delivery Address (English) *
+          {/* Payment Method as Radio Buttons */}
+          <div className="space-y-2">
+            <label className="block text-sm font-bold text-gray-700">
+              Payment Method
             </label>
-            <textarea
-              rows={3}
-              required
-              placeholder="Click on the map above or type your House/Flat No., Street, Landmark, City"
-              value={deliveryAddress}
-              onChange={(e) => setDeliveryAddress(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              2. Payment Method
-            </label>
-            <div className="space-y-2">
-              <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label
+                onClick={() => setPaymentMethod('COD')}
+                className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition ${
+                  paymentMethod === 'COD'
+                    ? 'border-orange-600 bg-orange-50/60'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
                 <input
                   type="radio"
                   name="paymentMethod"
                   value="COD"
                   checked={paymentMethod === 'COD'}
                   onChange={() => setPaymentMethod('COD')}
+                  className="w-4 h-4 accent-orange-600"
                 />
-                <span className="font-medium text-sm text-gray-800">
-                  Cash on Delivery / Pay on Delivery
-                </span>
+                <Banknote size={20} className="text-emerald-600" />
+                <div>
+                  <p className="text-sm font-bold text-gray-900">
+                    Cash on Delivery (COD)
+                  </p>
+                  <p className="text-xs text-gray-500">Pay when your order arrives</p>
+                </div>
               </label>
-              <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+
+              <label
+                onClick={() => setPaymentMethod('ONLINE')}
+                className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition ${
+                  paymentMethod === 'ONLINE'
+                    ? 'border-orange-600 bg-orange-50/60'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
                 <input
                   type="radio"
                   name="paymentMethod"
                   value="ONLINE"
                   checked={paymentMethod === 'ONLINE'}
                   onChange={() => setPaymentMethod('ONLINE')}
+                  className="w-4 h-4 accent-orange-600"
                 />
-                <span className="font-medium text-sm text-gray-800">Pay Online (Razorpay)</span>
+                <CreditCard size={20} className="text-blue-600" />
+                <div>
+                  <p className="text-sm font-bold text-gray-900">
+                    Online Payment (Razorpay)
+                  </p>
+                  <p className="text-xs text-gray-500">UPI, Card, NetBanking</p>
+                </div>
               </label>
+            </div>
+          </div>
+
+          {/* Bill Summary */}
+          <div className="bg-gray-50 p-4 rounded-xl space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span>Subtotal</span>
+              <span>₹{cartTotal}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Taxes (5%)</span>
+              <span>₹{taxes}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Delivery Fee</span>
+              <span>₹{deliveryFee}</span>
+            </div>
+            <div className="flex justify-between font-black text-base pt-2 border-t">
+              <span>Total</span>
+              <span>₹{grandTotal}</span>
             </div>
           </div>
 
           <button
             type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-orange-600 text-white font-bold rounded-lg hover:bg-orange-700 shadow-xs transition cursor-pointer disabled:opacity-50"
+            disabled={loading || cartItems.length === 0}
+            className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 rounded-xl cursor-pointer disabled:opacity-50"
           >
-            {loading ? 'Placing Order...' : `Place Order • ₹${cartTotal}`}
+            {loading ? 'Placing Order...' : `Place Order • ₹${grandTotal}`}
           </button>
         </form>
-
-        {/* Right: Order Summary */}
-        <div className="bg-white p-6 rounded-xl shadow-xs border border-gray-200 h-fit">
-          <h2 className="text-lg font-bold text-gray-800 mb-2 border-b pb-2">Order Summary</h2>
-          {uniqueRestaurants.length > 1 && (
-            <p className="text-xs text-orange-600 font-semibold mb-3">
-              Multi-Restaurant Order ({uniqueRestaurants.join(' + ')})
-            </p>
-          )}
-          <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-            {cart.map((item) => (
-              <div key={item.menuItem} className="flex justify-between items-center text-sm border-b pb-2 last:border-b-0">
-                <div>
-                  <p className="font-semibold text-gray-800">{item.name}</p>
-                  {item.shopName && (
-                    <p className="text-xs text-orange-600 font-medium">{item.shopName}</p>
-                  )}
-                  <p className="text-gray-500 text-xs">
-                    ₹{item.price} × {item.quantity}
-                  </p>
-                </div>
-                <span className="font-bold text-gray-800">₹{item.price * item.quantity}</span>
-              </div>
-            ))}
-          </div>
-          <div className="border-t mt-4 pt-4 flex justify-between items-center text-lg font-bold">
-            <span>Total Payable</span>
-            <span className="text-orange-600">₹{cartTotal}</span>
-          </div>
-        </div>
       </div>
     </div>
   );

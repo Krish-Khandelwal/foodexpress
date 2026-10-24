@@ -1,55 +1,64 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 
 export const AuthContext = createContext();
 
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(() => {
+    try {
+      const savedUser = localStorage.getItem('userInfo');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     try {
-      const rawUser = localStorage.getItem('userInfo') || localStorage.getItem('user');
-      if (rawUser) {
-        const parsed = JSON.parse(rawUser);
-        setUser(parsed);
-        if (parsed?.token) {
-          localStorage.setItem('token', parsed.token);
-          localStorage.setItem('userInfo', JSON.stringify(parsed));
-          localStorage.setItem('user', JSON.stringify(parsed));
-        }
+      const savedUser = localStorage.getItem('userInfo');
+      if (savedUser) {
+        setUser(JSON.parse(savedUser));
       }
-    } catch (err) {
-      console.error('Failed to parse stored user session:', err);
+    } catch {
       localStorage.removeItem('userInfo');
-      localStorage.removeItem('user');
-      localStorage.removeItem('token');
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   }, []);
 
   const login = (userData) => {
-    if (!userData) return;
     localStorage.setItem('userInfo', JSON.stringify(userData));
-    localStorage.setItem('user', JSON.stringify(userData));
-    if (userData.token) {
-      localStorage.setItem('token', userData.token);
-    }
     setUser(userData);
   };
 
   const logout = () => {
     localStorage.removeItem('userInfo');
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
     setUser(null);
   };
 
+  const updateUser = (updatedFields) => {
+    setUser((prev) => {
+      const next = { ...(prev || {}), ...updatedFields };
+      localStorage.setItem('userInfo', JSON.stringify(next));
+      return next;
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        setUser,
+        login,
+        logout,
+        updateUser,
+        loading,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 };
+
+export default AuthContext;
