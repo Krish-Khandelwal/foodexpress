@@ -4,7 +4,6 @@ import {
   Utensils,
   Star,
   Search,
-  ShoppingBag,
   XCircle,
   MapPin,
   Clock,
@@ -20,7 +19,6 @@ const Home = ({ showOrdersModal = false, setShowOrdersModal }) => {
   const [menuItems, setMenuItems] = useState([]);
   const [selectedShop, setSelectedShop] = useState(null);
   const [myOrders, setMyOrders] = useState([]);
-  const [localOrdersOpen, setLocalOrdersOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [ratingModalOrder, setRatingModalOrder] = useState(null);
   const [ratingValue, setRatingValue] = useState(5);
@@ -29,14 +27,8 @@ const Home = ({ showOrdersModal = false, setShowOrdersModal }) => {
   const { addToCart } = useContext(CartContext);
   const { user } = useContext(AuthContext);
 
-  const isOrdersOpen = showOrdersModal || localOrdersOpen;
   const closeOrdersModal = () => {
-    setLocalOrdersOpen(false);
     if (setShowOrdersModal) setShowOrdersModal(false);
-  };
-  const openOrdersModal = () => {
-    setLocalOrdersOpen(true);
-    if (setShowOrdersModal) setShowOrdersModal(true);
   };
 
   const fetchHomeData = async () => {
@@ -60,6 +52,14 @@ const Home = ({ showOrdersModal = false, setShowOrdersModal }) => {
   useEffect(() => {
     fetchHomeData();
   }, [user]);
+
+  useEffect(() => {
+    if (showOrdersModal && user) {
+      API.get('/orders/my-orders')
+        .then((res) => setMyOrders(res.data || []))
+        .catch(() => {});
+    }
+  }, [showOrdersModal, user]);
 
   const handleSelectShop = async (shop) => {
     setSelectedShop(shop);
@@ -108,21 +108,6 @@ const Home = ({ showOrdersModal = false, setShowOrdersModal }) => {
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-8">
-      {/* Top Action Bar with Recent/My Orders Button */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-5 py-3.5 rounded-2xl border border-gray-200 shadow-sm">
-        <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
-          <ShoppingBag size={18} className="text-orange-600" />
-          <span>Order fresh food from 1 restaurant at a time</span>
-        </div>
-        <button
-          onClick={openOrdersModal}
-          className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white text-xs sm:text-sm font-bold px-4 py-2.5 rounded-xl shadow-sm cursor-pointer transition"
-        >
-          <ClipboardList size={17} />
-          Your Recent Orders ({myOrders.length})
-        </button>
-      </div>
-
       {/* Hero & Search */}
       <div className="bg-linear-to-r from-orange-600 to-amber-500 rounded-3xl p-6 sm:p-10 text-white shadow-lg flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="space-y-2 max-w-xl">
@@ -281,13 +266,13 @@ const Home = ({ showOrdersModal = false, setShowOrdersModal }) => {
         </div>
       </div>
 
-      {/* Top Button Modal: Your Recent Orders */}
-      {isOrdersOpen && (
+      {/* My Orders Modal (Opened from Navbar "My Orders" button) */}
+      {showOrdersModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between p-5 border-b border-gray-200">
               <h2 className="text-xl font-extrabold text-gray-900 flex items-center gap-2">
-                <ClipboardList size={22} className="text-orange-600" /> Your Recent Orders
+                <ClipboardList size={22} className="text-orange-600" /> My Orders
               </h2>
               <button
                 onClick={closeOrdersModal}

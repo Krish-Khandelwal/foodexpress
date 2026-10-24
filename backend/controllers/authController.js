@@ -8,7 +8,7 @@ const generateToken = (id, role) => {
   return jwt.sign({ id, role }, secret, { expiresIn: '7d' });
 };
 
-// POST /api/auth/register
+// POST /api/auth/register (Public signup strictly forbids 'admin' role)
 export const registerUser = async (req, res) => {
   try {
     const {
@@ -35,7 +35,8 @@ export const registerUser = async (req, res) => {
       return res.status(400).json({ message: 'User already exists with this email' });
     }
 
-    const normalizedRole = ['customer', 'owner', 'rider', 'admin'].includes(role?.toLowerCase())
+    // Security: Only allow customer, owner, or rider on public registration
+    const normalizedRole = ['customer', 'owner', 'rider'].includes(role?.toLowerCase())
       ? role.toLowerCase()
       : 'customer';
 
@@ -49,7 +50,6 @@ export const registerUser = async (req, res) => {
 
     let shop = null;
     if (user.role === 'owner') {
-      // Newly registered restaurant owners start in 'pending' status for Admin approval
       shop = await Shop.create({
         name: shopName || `${user.name}'s Restaurant`,
         address: shopAddress || 'Connaught Place, New Delhi',
@@ -80,7 +80,7 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// POST /api/auth/login
+// POST /api/auth/login (Authenticates against MongoDB, including seeded Admin)
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -89,19 +89,7 @@ export const loginUser = async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    let user = await User.findOne({ email: normalizedEmail }).lean();
-
-    // Ensure default admin account exists if logging in with admin@foodexpress.com
-    if (!user && normalizedEmail === 'admin@foodexpress.com' && password === 'Admin@123') {
-      const createdAdmin = await User.create({
-        name: 'FoodExpress Admin',
-        email: 'admin@foodexpress.com',
-        password: 'Admin@123',
-        phone: '9999999999',
-        role: 'admin',
-      });
-      user = createdAdmin.toObject();
-    }
+    const user = await User.findOne({ email: normalizedEmail }).lean();
 
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });

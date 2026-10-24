@@ -24,6 +24,46 @@ export const ensureDefaultCategories = async () => {
   }
 };
 
+// Database Seeding on Server Start: Ensures exactly one Admin exists using .env credentials
+export const seedAdminUser = async () => {
+  try {
+    const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase().trim();
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    const adminName = process.env.ADMIN_NAME || 'FoodExpress Admin';
+    const adminPhone = process.env.ADMIN_PHONE || '9999999999';
+
+    if (!adminEmail || !adminPassword) {
+      console.warn(
+        '⚠️ ADMIN_EMAIL or ADMIN_PASSWORD not set in .env. Skipping admin seeding.'
+      );
+      return;
+    }
+
+    const existingAdmin = await User.findOne({
+      $or: [{ email: adminEmail }, { role: 'admin' }],
+    });
+
+    if (!existingAdmin) {
+      await User.create({
+        name: adminName,
+        email: adminEmail,
+        password: adminPassword,
+        phone: adminPhone,
+        role: 'admin',
+      });
+      console.log(`✅ Admin seeded in database (${adminEmail})`);
+    } else if (existingAdmin.role !== 'admin') {
+      existingAdmin.role = 'admin';
+      await existingAdmin.save();
+      console.log(`✅ Existing user promoted to Admin (${adminEmail})`);
+    } else {
+      console.log(`✅ Admin account verified (${existingAdmin.email})`);
+    }
+  } catch (error) {
+    console.error(`❌ Admin seeding error: ${error.message}`);
+  }
+};
+
 // GET /api/admin/categories
 export const getCategories = async (req, res) => {
   try {
@@ -122,34 +162,6 @@ export const getDashboardStats = async (req, res) => {
     ]);
 
     return res.json({ users, shops, orders, categories });
-  } catch (error) {
-    return res.status(500).json({ message: error.message });
-  }
-};
-
-// POST /api/admin/init
-export const createAdmin = async (req, res) => {
-  try {
-    const { name, email, password, phone } = req.body;
-    const targetEmail = (email || 'admin@foodexpress.com').toLowerCase().trim();
-    const existingAdmin = await User.findOne({ email: targetEmail });
-
-    if (existingAdmin) {
-      existingAdmin.role = 'admin';
-      if (password) existingAdmin.password = password;
-      await existingAdmin.save();
-      return res.json({ message: 'Existing user promoted to Admin', admin: existingAdmin });
-    }
-
-    const admin = await User.create({
-      name: name || 'FoodExpress Admin',
-      email: targetEmail,
-      password: password || 'Admin@123',
-      phone: phone || '9999999999',
-      role: 'admin',
-    });
-
-    return res.status(201).json({ message: 'Admin created successfully', admin });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }

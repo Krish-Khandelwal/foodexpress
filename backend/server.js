@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import connectDB from './config/db.js';
 import initializeSocket from './sockets/mapTrackerSocket.js';
+import { seedAdminUser, ensureDefaultCategories } from './controllers/adminController.js';
 
 // Import Route Files
 import authRoutes from './routes/authRoutes.js';
@@ -13,7 +14,12 @@ import orderRoutes from './routes/orderRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 
 dotenv.config();
-connectDB();
+
+// Connect to MongoDB and automatically seed the Admin user & default categories
+connectDB().then(async () => {
+  await seedAdminUser();
+  await ensureDefaultCategories();
+});
 
 const app = express();
 const server = http.createServer(app);

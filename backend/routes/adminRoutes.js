@@ -4,7 +4,6 @@ import {
   getPendingVendors,
   updateVendorStatus,
   getDashboardStats,
-  createAdmin,
   getCategories,
   addCategory,
   deleteCategory,
@@ -18,6 +17,5 @@ router.get('/stats', protect, restrictTo('admin'), getDashboardStats);
 router.get('/categories', getCategories);
 router.post('/categories', protect, restrictTo('admin'), addCategory);
 router.delete('/categories/:id', protect, restrictTo('admin'), deleteCategory);
-router.post('/init', createAdmin);
 
 export default router;

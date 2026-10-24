@@ -4,6 +4,13 @@ import Category from '../models/Category.js';
 import { ensureDefaultCategories } from './adminController.js';
 import { uploadToCloudinary } from '../config/cloudinary.js';
 
+// Safely parses boolean values whether sent via multipart FormData ('true'/'false') or JSON (true/false)
+const parseBool = (val, fallback = true) => {
+  if (val === undefined || val === null || val === '') return fallback;
+  if (typeof val === 'boolean') return val;
+  return String(val).toLowerCase() === 'true';
+};
+
 // GET /api/menu/categories
 export const getMenuCategories = async (req, res) => {
   try {
@@ -52,8 +59,8 @@ export const createMenuItem = async (req, res) => {
       category: category || 'Main Course',
       image: imageUrl,
       imageUrl: imageUrl,
-      isVeg: isVeg !== undefined ? Boolean(isVeg) : true,
-      isAvailable: isAvailable !== undefined ? Boolean(isAvailable) : true,
+      isVeg: parseBool(isVeg, true),
+      isAvailable: parseBool(isAvailable, true),
       shop: shop._id,
     });
 
@@ -80,7 +87,7 @@ export const updateMenuItem = async (req, res) => {
       const dataURI = `data:${req.file.mimetype};base64,${b64}`;
       updatedImageUrl = await uploadToCloudinary(dataURI);
     } else if (image !== undefined && image !== menuItem.image) {
-      updatedImageUrl = image ? await uploadToCloudinary(image) : '';
+      updatedImageUrl = image ? await uploadToCloudinary(image) : menuItem.image;
     }
 
     menuItem.name = name ?? menuItem.name;
@@ -89,8 +96,10 @@ export const updateMenuItem = async (req, res) => {
     menuItem.category = category ?? menuItem.category;
     menuItem.image = updatedImageUrl;
     menuItem.imageUrl = updatedImageUrl;
-    if (isVeg !== undefined) menuItem.isVeg = Boolean(isVeg);
-    if (isAvailable !== undefined) menuItem.isAvailable = Boolean(isAvailable);
+    if (isVeg !== undefined) menuItem.isVeg = parseBool(isVeg, menuItem.isVeg);
+    if (isAvailable !== undefined) {
+      menuItem.isAvailable = parseBool(isAvailable, menuItem.isAvailable);
+    }
 
     await menuItem.save();
     return res.json(menuItem);
