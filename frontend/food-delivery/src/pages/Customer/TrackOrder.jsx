@@ -99,8 +99,9 @@ const TrackOrder = () => {
     return <div className="p-8 text-center text-red-500">Order not found.</div>;
   }
 
+  // Customer can cancel only while order is pending or preparing
   const canCancel =
-    order.status !== 'delivered' && order.status !== 'cancelled';
+    order.status === 'pending' || order.status === 'preparing';
   const englishAddress = cleanEnglishAddress(order.deliveryAddress);
 
   return (
@@ -223,7 +224,7 @@ const TrackOrder = () => {
           </div>
         </div>
 
-        {/* Food Quality Rating System */}
+        {/* Food Quality Rating System (Available once order is delivered) */}
         {order.status !== 'cancelled' && (
           <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm space-y-4">
             <h2 className="text-lg font-extrabold text-gray-900 flex items-center gap-2">
@@ -257,6 +258,10 @@ const TrackOrder = () => {
                 <p className="text-xs text-emerald-700 font-bold flex items-center gap-1">
                   <CheckCircle2 size={14} /> Your food quality rating has been saved!
                 </p>
+              </div>
+            ) : order.status !== 'delivered' ? (
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-600">
+                You will be able to rate the food quality as soon as your order is marked <strong>Delivered</strong>.
               </div>
             ) : (
               <form onSubmit={handleRateFood} className="space-y-4">

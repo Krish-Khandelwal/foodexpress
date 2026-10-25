@@ -32,8 +32,10 @@ export const AuthProvider = ({ children }) => {
     setUser(userData);
   };
 
+  // Clears both user session and cart storage on logout so another user doesn't inherit the cart
   const logout = () => {
     localStorage.removeItem('userInfo');
+    localStorage.removeItem('foodexpress_cart');
     setUser(null);
   };
 

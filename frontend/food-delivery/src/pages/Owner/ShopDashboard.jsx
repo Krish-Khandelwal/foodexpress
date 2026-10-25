@@ -294,12 +294,6 @@ const ShopDashboard = () => {
               </div>
             </div>
           </div>
-          <a
-            href="mailto:admin@foodexpress.com?subject=Restaurant%20Approval%20Request"
-            className="bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-3 rounded-xl text-sm shrink-0 shadow"
-          >
-            Contact Admin for Approval
-          </a>
         </div>
       )}
 

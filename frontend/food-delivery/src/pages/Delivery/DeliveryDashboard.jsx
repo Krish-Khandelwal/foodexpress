@@ -11,7 +11,7 @@ import API from '../../api/axios';
 import { AuthContext } from '../../context/AuthContext';
 import LocationMap from '../../components/Maps/LocationMap';
 
-// Strips any Hindi/Devanagari script so Rider always sees English address
+// Helper: Removes any Hindi/Devanagari characters so addresses stay in English
 const cleanEnglishAddress = (text) => {
   if (!text) return 'Customer Address';
   const cleaned = String(text)
@@ -30,12 +30,15 @@ const DeliveryDashboard = () => {
   const [deliveryOtpInput, setDeliveryOtpInput] = useState({});
   const [liveCoords, setLiveCoords] = useState(null);
   const [loading, setLoading] = useState(true);
+
   const ordersRef = useRef([]);
+  const lastGpsSentTimeRef = useRef(0);
 
   useEffect(() => {
     ordersRef.current = orders;
   }, [orders]);
 
+  // Step 1: Fetch available ('ready') and rider's active orders
   const fetchOrders = async () => {
     try {
       const { data } = await API.get('/orders/rider/available');
@@ -49,20 +52,27 @@ const DeliveryDashboard = () => {
 
   useEffect(() => {
     fetchOrders();
-    const interval = setInterval(fetchOrders, 5000);
+    const interval = setInterval(fetchOrders, 6000);
     return () => clearInterval(interval);
   }, []);
 
-  // Push rider's live GPS coordinates to all active accepted orders
-  const syncRiderLocationToActiveOrders = async (lat, lng) => {
+  // Step 2: Send Rider's live GPS location to backend (throttled to prevent lag)
+  const syncRiderLocationToActiveOrders = async (lat, lng, forceSend = false) => {
     setLiveCoords({ lat, lng });
-    const myActiveOrders = ordersRef.current.filter(
-      (o) =>
-        o.rider &&
-        String(o.rider._id || o.rider) === String(user?._id) &&
-        o.status !== 'delivered' &&
-        o.status !== 'cancelled'
-    );
+
+    const now = Date.now();
+    // Only send API request at most once every 8 seconds unless forced
+    if (!forceSend && now - lastGpsSentTimeRef.current < 8000) {
+      return;
+    }
+    lastGpsSentTimeRef.current = now;
+
+    const myActiveOrders = ordersRef.current.filter((ord) => {
+      const riderId = ord.rider?._id || ord.rider;
+      const isMine = riderId && String(riderId) === String(user?._id);
+      const isActive = ord.status !== 'delivered' && ord.status !== 'cancelled';
+      return isMine && isActive;
+    });
 
     if (myActiveOrders.length === 0) return;
 
@@ -73,42 +83,42 @@ const DeliveryDashboard = () => {
     );
   };
 
-  // Watch rider's real-time geolocation continuously
+  // Step 3: Watch Rider's live GPS position smoothly
   useEffect(() => {
     if (!navigator.geolocation || !user?._id) return;
 
     const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        syncRiderLocationToActiveOrders(latitude, longitude);
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        syncRiderLocationToActiveOrders(latitude, longitude, false);
       },
       () => {},
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+      { enableHighAccuracy: true, maximumAge: 8000, timeout: 10000 }
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
   }, [user?._id]);
 
+  // Step 4: Manual GPS sync button handler
   const handleManualGpsSync = () => {
     if (!navigator.geolocation) {
       alert('Geolocation is not supported by your browser.');
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        await syncRiderLocationToActiveOrders(latitude, longitude);
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        await syncRiderLocationToActiveOrders(latitude, longitude, true);
         fetchOrders();
       },
       () => {
-        alert(
-          'Please allow browser location access to update your live GPS position.'
-        );
+        alert('Please allow browser location access to update your live GPS position.');
       },
       { enableHighAccuracy: true }
     );
   };
 
+  // Step 5: Rider clicks "Accept Delivery"
   const handleAcceptDelivery = async (orderId) => {
     try {
       const payload = liveCoords
@@ -121,12 +131,12 @@ const DeliveryDashboard = () => {
     }
   };
 
+  // Step 6: Rider enters Pickup Code at the Restaurant
   const handleVerifyPickupCode = async (orderId) => {
     const code = pickupCodeInput[orderId];
     if (!code) {
-      return alert(
-        'Please enter the 4-digit Pickup Code from the Restaurant Owner'
-      );
+      alert('Please enter the 4-digit Pickup Code from the Restaurant Owner');
+      return;
     }
     try {
       await API.post(`/orders/${orderId}/verify-pickup-otp`, {
@@ -140,10 +150,12 @@ const DeliveryDashboard = () => {
     }
   };
 
+  // Step 7: Rider enters Customer Delivery OTP at customer's address
   const handleVerifyDeliveryOtp = async (orderId) => {
     const otp = deliveryOtpInput[orderId];
     if (!otp) {
-      return alert('Please enter the 4-digit Customer Delivery OTP');
+      alert('Please enter the 4-digit Customer Delivery OTP');
+      return;
     }
     try {
       await API.post(`/orders/${orderId}/verify-delivery-otp`, { otp });
@@ -206,9 +218,7 @@ const DeliveryDashboard = () => {
               String(order.rider._id || order.rider) === String(user?._id);
             const isPickedUp = order.status === 'out for delivery';
             const isDelivered = order.status === 'delivered';
-            const englishCustomerAddress = cleanEnglishAddress(
-              order.deliveryAddress
-            );
+            const englishCustomerAddress = cleanEnglishAddress(order.deliveryAddress);
 
             return (
               <div
@@ -229,8 +239,7 @@ const DeliveryDashboard = () => {
                     <p className="text-sm font-semibold text-gray-800 mt-2 flex items-center gap-1">
                       <MapPin size={15} className="text-emerald-600 shrink-0" />
                       <span>
-                        Customer: {order.customer?.name || 'Customer'} —{' '}
-                        {englishCustomerAddress}
+                        Customer: {order.customer?.name || 'Customer'} — {englishCustomerAddress}
                       </span>
                     </p>
                   </div>
@@ -253,7 +262,7 @@ const DeliveryDashboard = () => {
                   </div>
                 </div>
 
-                {/* Accept Delivery ONLY shows when order.status === 'ready' and unassigned */}
+                {/* Accept Delivery button shows ONLY when order is Ready */}
                 {!order.rider && order.status === 'ready' && !isDelivered && (
                   <button
                     onClick={() => handleAcceptDelivery(order._id)}
@@ -263,7 +272,6 @@ const DeliveryDashboard = () => {
                   </button>
                 )}
 
-                {/* Accepted by Rider -> Show Interactive Map & Step-by-Step Code Flow */}
                 {isAcceptedByMe && !isDelivered && (
                   <div className="space-y-4">
                     <LocationMap
@@ -278,7 +286,6 @@ const DeliveryDashboard = () => {
                       height="320px"
                     />
 
-                    {/* STEP 1: Enter Pickup Code from Restaurant Owner */}
                     {!isPickedUp ? (
                       <div className="bg-orange-50 border-2 border-orange-300 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
                         <div>
@@ -316,7 +323,6 @@ const DeliveryDashboard = () => {
                         </div>
                       </div>
                     ) : (
-                      /* STEP 2: After Pickup Code is verified -> Rider sees path to Customer & enters Customer Delivery OTP */
                       <div className="bg-blue-50 border-2 border-blue-300 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
                         <div>
                           <span className="text-xs font-black uppercase text-blue-700">

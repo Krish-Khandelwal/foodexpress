@@ -31,6 +31,7 @@ const Home = ({ showOrdersModal = false, setShowOrdersModal }) => {
     if (setShowOrdersModal) setShowOrdersModal(false);
   };
 
+  // Step 1: Load approved shops, available menu items, and customer's orders
   const fetchHomeData = async () => {
     try {
       const [shopsRes, menuRes] = await Promise.all([
@@ -61,7 +62,12 @@ const Home = ({ showOrdersModal = false, setShowOrdersModal }) => {
     }
   }, [showOrdersModal, user]);
 
+  // Step 2: Select a restaurant to view its menu
   const handleSelectShop = async (shop) => {
+    if (shop.isOpen === false) {
+      alert(`"${shop.name}" is currently closed.`);
+      return;
+    }
     setSelectedShop(shop);
     try {
       const { data } = await API.get(`/menu/shops/${shop._id}/menu`);
@@ -71,6 +77,7 @@ const Home = ({ showOrdersModal = false, setShowOrdersModal }) => {
     }
   };
 
+  // Step 3: Cancel order (allowed while pending or preparing)
   const handleCancelOrder = async (orderId) => {
     if (!window.confirm('Are you sure you want to cancel this order?')) return;
     try {
@@ -83,6 +90,7 @@ const Home = ({ showOrdersModal = false, setShowOrdersModal }) => {
     }
   };
 
+  // Step 4: Submit food quality rating (allowed after order is delivered)
   const handleQuickRateSubmit = async (e) => {
     e.preventDefault();
     if (!ratingModalOrder) return;
@@ -141,38 +149,58 @@ const Home = ({ showOrdersModal = false, setShowOrdersModal }) => {
             Approved Restaurants
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {shops.map((shop) => (
-              <div
-                key={shop._id}
-                onClick={() => handleSelectShop(shop)}
-                className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm hover:shadow-md transition cursor-pointer flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-lg font-extrabold text-gray-900">
-                      {shop.name || shop.shopName}
-                    </h3>
-                    <span className="bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
-                      <Star size={12} className="fill-amber-500 text-amber-500" />
-                      {shop.rating > 0 ? `${shop.rating} (${shop.numReviews})` : 'New'}
+            {shops.map((shop) => {
+              const isShopOpen = shop.isOpen !== false;
+              return (
+                <div
+                  key={shop._id}
+                  onClick={() => handleSelectShop(shop)}
+                  className={`bg-white rounded-2xl border p-5 shadow-sm transition flex flex-col justify-between ${
+                    isShopOpen
+                      ? 'border-gray-200 hover:shadow-md cursor-pointer'
+                      : 'border-gray-200 opacity-60 cursor-not-allowed'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-lg font-extrabold text-gray-900">
+                        {shop.name || shop.shopName}
+                      </h3>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase ${
+                            isShopOpen
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-red-100 text-red-700'
+                          }`}
+                        >
+                          {isShopOpen ? 'Open' : 'Closed'}
+                        </span>
+                        <span className="bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
+                          <Star size={12} className="fill-amber-500 text-amber-500" />
+                          {shop.rating > 0 ? `${shop.rating} (${shop.numReviews})` : 'New'}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                      <MapPin size={13} /> {shop.address}
+                    </p>
+                    <p className="text-xs text-orange-600 font-semibold mt-2">
+                      {shop.cuisine || 'Multi-Cuisine'}
+                    </p>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                    <span className="flex items-center gap-1">
+                      <Clock size={13} /> 25–35 mins
+                    </span>
+                    <span className="text-orange-600 font-bold">
+                      {isShopOpen ? 'View Menu →' : 'Currently Closed'}
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                    <MapPin size={13} /> {shop.address}
-                  </p>
-                  <p className="text-xs text-orange-600 font-semibold mt-2">
-                    {shop.cuisine || 'Multi-Cuisine'}
-                  </p>
                 </div>
-
-                <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-                  <span className="flex items-center gap-1">
-                    <Clock size={13} /> 25–35 mins
-                  </span>
-                  <span className="text-orange-600 font-bold">View Menu →</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ) : (
@@ -288,81 +316,88 @@ const Home = ({ showOrdersModal = false, setShowOrdersModal }) => {
                   You haven&apos;t placed any orders yet.
                 </p>
               ) : (
-                myOrders.map((ord) => (
-                  <div
-                    key={ord._id}
-                    className="border border-gray-200 rounded-xl p-4 flex flex-col justify-between gap-3"
-                  >
-                    <div className="flex justify-between items-start gap-2">
-                      <div>
-                        <span className="text-xs font-mono text-gray-400">
-                          #{ord._id.slice(-6).toUpperCase()}
-                        </span>
-                        <h4 className="font-bold text-gray-900">
-                          {ord.shop?.name || 'Restaurant'}
-                        </h4>
-                        <p className="text-xs text-gray-500">
-                          {ord.items.map((i) => `${i.quantity}x ${i.name}`).join(', ')}
-                        </p>
-                      </div>
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase ${
-                          ord.status === 'delivered'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : ord.status === 'cancelled'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-orange-100 text-orange-800'
-                        }`}
-                      >
-                        {ord.status}
-                      </span>
-                    </div>
+                myOrders.map((ord) => {
+                  const canCustomerCancel =
+                    ord.status === 'pending' || ord.status === 'preparing';
+                  const canCustomerRate =
+                    ord.status === 'delivered' && !ord.rating;
 
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-100">
-                      <span className="font-extrabold text-gray-900">
-                        ₹{ord.totalAmount}
-                      </span>
-
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Link
-                          to={`/track-order/${ord._id}`}
-                          onClick={closeOrdersModal}
-                          className="bg-orange-50 text-orange-700 hover:bg-orange-100 text-xs font-bold px-3 py-1.5 rounded-lg"
-                        >
-                          Track / Details
-                        </Link>
-
-                        {ord.status !== 'delivered' && ord.status !== 'cancelled' && (
-                          <button
-                            onClick={() => handleCancelOrder(ord._id)}
-                            className="bg-red-50 text-red-600 hover:bg-red-100 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer"
-                          >
-                            <XCircle size={13} /> Cancel
-                          </button>
-                        )}
-
-                        {ord.status !== 'cancelled' && !ord.rating && (
-                          <button
-                            onClick={() => {
-                              setRatingModalOrder(ord);
-                              setRatingValue(5);
-                              setRatingReview('');
-                            }}
-                            className="bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer"
-                          >
-                            <Star size={13} /> Rate Food
-                          </button>
-                        )}
-
-                        {ord.rating && (
-                          <span className="text-xs font-bold text-amber-600">
-                            ★ {ord.rating}/5 Rated
+                  return (
+                    <div
+                      key={ord._id}
+                      className="border border-gray-200 rounded-xl p-4 flex flex-col justify-between gap-3"
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <div>
+                          <span className="text-xs font-mono text-gray-400">
+                            #{ord._id.slice(-6).toUpperCase()}
                           </span>
-                        )}
+                          <h4 className="font-bold text-gray-900">
+                            {ord.shop?.name || 'Restaurant'}
+                          </h4>
+                          <p className="text-xs text-gray-500">
+                            {ord.items.map((i) => `${i.quantity}x ${i.name}`).join(', ')}
+                          </p>
+                        </div>
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase ${
+                            ord.status === 'delivered'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : ord.status === 'cancelled'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-orange-100 text-orange-800'
+                          }`}
+                        >
+                          {ord.status}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-100">
+                        <span className="font-extrabold text-gray-900">
+                          ₹{ord.totalAmount}
+                        </span>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            to={`/track-order/${ord._id}`}
+                            onClick={closeOrdersModal}
+                            className="bg-orange-50 text-orange-700 hover:bg-orange-100 text-xs font-bold px-3 py-1.5 rounded-lg"
+                          >
+                            Track / Details
+                          </Link>
+
+                          {canCustomerCancel && (
+                            <button
+                              onClick={() => handleCancelOrder(ord._id)}
+                              className="bg-red-50 text-red-600 hover:bg-red-100 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer"
+                            >
+                              <XCircle size={13} /> Cancel
+                            </button>
+                          )}
+
+                          {canCustomerRate && (
+                            <button
+                              onClick={() => {
+                                setRatingModalOrder(ord);
+                                setRatingValue(5);
+                                setRatingReview('');
+                              }}
+                              className="bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer"
+                            >
+                              <Star size={13} /> Rate Food
+                            </button>
+                          )}
+
+                          {ord.rating && (
+                            <span className="text-xs font-bold text-amber-600">
+                              ★ {ord.rating}/5 Rated
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// Fix default Leaflet icons
+// Fix default Leaflet marker icons
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -11,44 +11,42 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-const createBadgeIcon = (emoji, bgColor) =>
-  L.divIcon({
+// Helper to create custom round emoji markers
+const createBadgeIcon = (emoji, bgColor) => {
+  return L.divIcon({
     className: 'custom-leaflet-pin',
     html: `<div style="background:${bgColor};width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,0.28);">${emoji}</div>`,
     iconSize: [36, 36],
     iconAnchor: [18, 18],
   });
+};
 
 const shopIcon = createBadgeIcon('🍽️', '#ea580c');
 const riderIcon = createBadgeIcon('🛵', '#2563eb');
 const customerIcon = createBadgeIcon('🏠', '#16a34a');
 
-const FitBoundsController = ({ points }) => {
+// Fit map bounds ONLY when the route stage changes
+const FitBoundsOncePerStage = ({ points, stageKey }) => {
   const map = useMap();
+  const lastStageRef = useRef('');
+
   useEffect(() => {
+    if (lastStageRef.current === stageKey) {
+      return;
+    }
+    lastStageRef.current = stageKey;
+
     if (Array.isArray(points) && points.length >= 2) {
       const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lng]));
       map.fitBounds(bounds, { padding: [45, 45], maxZoom: 16 });
     } else if (Array.isArray(points) && points.length === 1) {
       map.setView([points[0].lat, points[0].lng], 15);
     }
-  }, [map, JSON.stringify(points)]);
+  }, [map, stageKey, points]);
+
   return null;
 };
 
-/**
- * LocationMap
- * - viewerRole === 'rider':
- *   1. Once rider accepts delivery (before pickup code verified, i.e. status !== 'out for delivery'):
- *      shows ONLY the path from Rider -> Restaurant.
- *   2. After pickup code is entered (status === 'out for delivery'):
- *      shows ONLY the path from Rider -> Customer.
- * - viewerRole === 'customer':
- *   1. Once rider accepts delivery (hasRider === true):
- *      shows ONLY the path between Delivery Rider and Customer's address.
- *   2. Before rider accepts:
- *      shows Restaurant and Customer markers.
- */
 const LocationMap = ({
   shopLocation,
   customerLocation,
@@ -63,26 +61,36 @@ const LocationMap = ({
   const [routeCoords, setRouteCoords] = useState([]);
   const [routeDistanceKm, setRouteDistanceKm] = useState(null);
   const [routeDurationMin, setRouteDurationMin] = useState(null);
+  const lastRouteKeyRef = useRef('');
 
+  // Set safe fallback coordinates
   const validShop = {
     lat: Number(shopLocation?.lat) || 28.6139,
     lng: Number(shopLocation?.lng) || 77.209,
   };
+
   const validCustomer = {
     lat: Number(customerLocation?.lat) || 28.625,
     lng: Number(customerLocation?.lng) || 77.215,
   };
-  const validRider =
-    riderLocation?.lat && riderLocation?.lng
-      ? { lat: Number(riderLocation.lat), lng: Number(riderLocation.lng) }
-      : hasRider
-      ? { lat: validShop.lat + 0.004, lng: validShop.lng + 0.004 }
-      : null;
+
+  let validRider = null;
+  if (riderLocation?.lat && riderLocation?.lng) {
+    validRider = {
+      lat: Number(riderLocation.lat),
+      lng: Number(riderLocation.lng),
+    };
+  } else if (hasRider) {
+    validRider = {
+      lat: validShop.lat + 0.004,
+      lng: validShop.lng + 0.004,
+    };
+  }
 
   const isPickedUp = orderStatus === 'out for delivery' || orderStatus === 'delivered';
   const riderAssigned = Boolean(hasRider || validRider);
 
-  // Determine active path endpoints based on role and order status
+  // Decide startPoint and endPoint based on Role and Order Status
   let startPoint = null;
   let endPoint = null;
   let routeLabel = '';
@@ -90,20 +98,18 @@ const LocationMap = ({
 
   if (viewerRole === 'rider') {
     if (riderAssigned && !isPickedUp) {
-      // Rider accepted delivery -> first show path to the Restaurant
       startPoint = validRider;
       endPoint = validShop;
       routeLabel = 'Step 1: Route to Restaurant (Enter Pickup Code at Restaurant)';
       routeColor = '#ea580c';
     } else if (riderAssigned && isPickedUp) {
-      // After entering pickup code -> show path to Customer location
       startPoint = validRider || validShop;
       endPoint = validCustomer;
       routeLabel = 'Step 2: Route to Customer Location';
       routeColor = '#2563eb';
     }
   } else {
-    // Customer side: once rider accepts delivery, ONLY show path between Rider and Customer
+    // Customer View
     if (riderAssigned && validRider) {
       startPoint = validRider;
       endPoint = validCustomer;
@@ -112,20 +118,29 @@ const LocationMap = ({
     }
   }
 
+  // Fetch road route safely handling StrictMode and fallbacks
   useEffect(() => {
-    let isMounted = true;
-    const fetchRoadRoute = async () => {
-      if (!startPoint || !endPoint) {
-        setRouteCoords([]);
-        setRouteDistanceKm(null);
-        setRouteDurationMin(null);
-        return;
-      }
+    if (!startPoint || !endPoint) {
+      setRouteCoords([]);
+      setRouteDistanceKm(null);
+      setRouteDurationMin(null);
+      return;
+    }
 
+    const currentKey = `${startPoint.lat.toFixed(4)},${startPoint.lng.toFixed(4)}->${endPoint.lat.toFixed(4)},${endPoint.lng.toFixed(4)}`;
+    
+    if (lastRouteKeyRef.current === currentKey) {
+      return;
+    }
+    lastRouteKeyRef.current = currentKey;
+
+    let isMounted = true;
+
+    const fetchRoadRoute = async () => {
       try {
         const url = `https://router.project-osrm.org/route/v1/driving/${startPoint.lng},${startPoint.lat};${endPoint.lng},${endPoint.lat}?overview=full&geometries=geojson`;
-        const res = await fetch(url);
-        const data = await res.json();
+        const response = await fetch(url);
+        const data = await response.json();
 
         if (isMounted && data?.routes?.[0]?.geometry?.coordinates) {
           const coords = data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
@@ -135,9 +150,10 @@ const LocationMap = ({
           return;
         }
       } catch {
-        // Fallback to direct line if OSRM is unreachable
+        // Suppress errors and proceed to fallback
       }
 
+      // Fallback to straight line if OSRM is offline or points are disconnected
       if (isMounted) {
         setRouteCoords([
           [startPoint.lat, startPoint.lng],
@@ -147,16 +163,17 @@ const LocationMap = ({
     };
 
     fetchRoadRoute();
+
     return () => {
       isMounted = false;
+      // FIX: Reset ref on unmount so React Strict Mode re-fetches properly
+      lastRouteKeyRef.current = '';
     };
   }, [startPoint?.lat, startPoint?.lng, endPoint?.lat, endPoint?.lng]);
 
-  // Visible markers based on active stage and role
-  const showShopMarker =
-    viewerRole === 'rider' ? !isPickedUp : !riderAssigned;
-  const showCustomerMarker =
-    viewerRole === 'rider' ? isPickedUp : true;
+  // Decide which markers to show
+  const showShopMarker = viewerRole === 'rider' ? !isPickedUp : !riderAssigned;
+  const showCustomerMarker = viewerRole === 'rider' ? isPickedUp : true;
   const showRiderMarker = Boolean(riderAssigned && validRider);
 
   const boundsPoints = [];
@@ -167,6 +184,8 @@ const LocationMap = ({
     if (showCustomerMarker) boundsPoints.push(validCustomer);
     if (showRiderMarker) boundsPoints.push(validRider);
   }
+
+  const stageKey = `${viewerRole}-${riderAssigned}-${isPickedUp}`;
 
   return (
     <div className="w-full rounded-2xl overflow-hidden border border-gray-200 shadow-sm bg-white">
@@ -198,7 +217,7 @@ const LocationMap = ({
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
-          <FitBoundsController points={boundsPoints} />
+          <FitBoundsOncePerStage points={boundsPoints} stageKey={stageKey} />
 
           {showShopMarker && (
             <Marker position={[validShop.lat, validShop.lng]} icon={shopIcon}>

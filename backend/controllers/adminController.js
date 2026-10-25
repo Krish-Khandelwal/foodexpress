@@ -24,7 +24,7 @@ export const ensureDefaultCategories = async () => {
   }
 };
 
-// Database Seeding on Server Start: Ensures exactly one Admin exists using .env credentials
+// Database Seeding on Server Start: Ensures Admin exists and matches .env credentials
 export const seedAdminUser = async () => {
   try {
     const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase().trim();
@@ -39,10 +39,12 @@ export const seedAdminUser = async () => {
       return;
     }
 
+    // Step 1: Check if an admin user already exists
     const existingAdmin = await User.findOne({
       $or: [{ email: adminEmail }, { role: 'admin' }],
     });
 
+    // Step 2: Create admin if not found
     if (!existingAdmin) {
       await User.create({
         name: adminName,
@@ -52,10 +54,31 @@ export const seedAdminUser = async () => {
         role: 'admin',
       });
       console.log(`✅ Admin seeded in database (${adminEmail})`);
-    } else if (existingAdmin.role !== 'admin') {
+      return;
+    }
+
+    // Step 3: Keep existing admin synced with .env email & password
+    let needsSave = false;
+
+    if (existingAdmin.role !== 'admin') {
       existingAdmin.role = 'admin';
+      needsSave = true;
+    }
+
+    if (existingAdmin.email !== adminEmail) {
+      existingAdmin.email = adminEmail;
+      needsSave = true;
+    }
+
+    const isPasswordSame = await existingAdmin.matchPassword(adminPassword);
+    if (!isPasswordSame) {
+      existingAdmin.password = adminPassword;
+      needsSave = true;
+    }
+
+    if (needsSave) {
       await existingAdmin.save();
-      console.log(`✅ Existing user promoted to Admin (${adminEmail})`);
+      console.log(`✅ Admin credentials synced with .env (${adminEmail})`);
     } else {
       console.log(`✅ Admin account verified (${existingAdmin.email})`);
     }
@@ -68,7 +91,7 @@ export const seedAdminUser = async () => {
 export const getCategories = async (req, res) => {
   try {
     await ensureDefaultCategories();
-    const categories = await Category.find().sort({ name: 1 });
+    const categories = await Category.find().sort({ name: 1 }).lean();
     return res.json(categories);
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -86,7 +109,8 @@ export const addCategory = async (req, res) => {
     const cleanName = name.trim();
     const existing = await Category.findOne({
       name: { $regex: new RegExp(`^${cleanName}$`, 'i') },
-    });
+    }).lean();
+
     if (existing) {
       return res.status(400).json({ message: 'Category already exists' });
     }
@@ -113,7 +137,8 @@ export const getPendingVendors = async (req, res) => {
   try {
     const vendors = await Shop.find()
       .populate('owner', 'name email phone')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
     return res.json(vendors);
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -150,15 +175,16 @@ export const getDashboardStats = async (req, res) => {
   try {
     await ensureDefaultCategories();
     const [users, shops, orders, categories] = await Promise.all([
-      User.find().select('-password').sort({ createdAt: -1 }),
-      Shop.find().populate('owner', 'name email phone').sort({ createdAt: -1 }),
+      User.find().select('-password').sort({ createdAt: -1 }).lean(),
+      Shop.find().populate('owner', 'name email phone').sort({ createdAt: -1 }).lean(),
       Order.find()
         .populate('customer', 'name email phone')
         .populate('shop', 'name')
         .populate('shops', 'name')
         .populate('rider', 'name phone')
-        .sort({ createdAt: -1 }),
-      Category.find().sort({ name: 1 }),
+        .sort({ createdAt: -1 })
+        .lean(),
+      Category.find().sort({ name: 1 }).lean(),
     ]);
 
     return res.json({ users, shops, orders, categories });
