@@ -522,7 +522,7 @@ export const updateRiderLocation = async (req, res) => {
           lng: Number(lng),
         },
       },
-      { new: true }
+      { returnDocument: 'after' }
     ).lean();
 
     if (!updatedOrder) {
