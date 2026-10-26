@@ -27,19 +27,16 @@ export const getMenuCategories = async (req, res) => {
   }
 };
 
-// 2. Create New Dish (Uploads Device Image to Cloudinary)
+// 2. Create New Dish (Saves to backend/public -> Cloudinary uploads from backend/public)
 // Route: POST /api/menu
 export const createMenuItem = async (req, res) => {
   try {
-    // Step 1: Extract fields from request body
     const { name, description, price, category, image, isVeg, isAvailable } = req.body;
 
-    // Step 2: Validate required fields
     if (!name || price === undefined || price === '') {
       return res.status(400).json({ message: 'Food name and price are required.' });
     }
 
-    // Step 3: Find or create the Restaurant Owner's shop
     let shop = await Shop.findOne({ owner: req.user._id });
     if (!shop) {
       shop = await Shop.create({
@@ -52,17 +49,14 @@ export const createMenuItem = async (req, res) => {
       });
     }
 
-    // Step 4: Upload image file from device to Cloudinary
+    // If file was uploaded to backend/public by multer, pass its local path (req.file.path) to Cloudinary
     let imageUrl = '';
-    if (req.file) {
-      const base64Image = Buffer.from(req.file.buffer).toString('base64');
-      const dataURI = `data:${req.file.mimetype};base64,${base64Image}`;
-      imageUrl = await uploadToCloudinary(dataURI);
+    if (req.file?.path) {
+      imageUrl = await uploadToCloudinary(req.file.path);
     } else if (image) {
       imageUrl = await uploadToCloudinary(image);
     }
 
-    // Step 5: Save dish in MongoDB
     const menuItem = await MenuItem.create({
       name: name.trim(),
       description: description || '',
@@ -81,36 +75,31 @@ export const createMenuItem = async (req, res) => {
   }
 };
 
-// 3. Update Existing Dish Details (Verifies Shop Ownership)
+// 3. Update Existing Dish Details (Saves to backend/public -> Cloudinary uploads from backend/public)
 // Route: PUT /api/menu/:id
 export const updateMenuItem = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, price, category, image, isVeg, isAvailable } = req.body;
 
-    // Step 1: Find the dish in the database
     const menuItem = await MenuItem.findById(id);
     if (!menuItem) {
       return res.status(404).json({ message: 'Food item not found' });
     }
 
-    // Step 2: Verify that this dish belongs to the logged-in owner's shop
     const shop = await Shop.findOne({ owner: req.user._id }).lean();
     if (shop && menuItem.shop.toString() !== shop._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized to edit this dish' });
     }
 
-    // Step 3: If a new image file was picked, upload it to Cloudinary
+    // If a new image was uploaded to backend/public, upload it from req.file.path to Cloudinary
     let updatedImageUrl = menuItem.image;
-    if (req.file) {
-      const base64Image = Buffer.from(req.file.buffer).toString('base64');
-      const dataURI = `data:${req.file.mimetype};base64,${base64Image}`;
-      updatedImageUrl = await uploadToCloudinary(dataURI);
+    if (req.file?.path) {
+      updatedImageUrl = await uploadToCloudinary(req.file.path);
     } else if (image !== undefined && image !== menuItem.image) {
       updatedImageUrl = image ? await uploadToCloudinary(image) : menuItem.image;
     }
 
-    // Step 4: Update fields
     if (name !== undefined) menuItem.name = name.trim();
     if (description !== undefined) menuItem.description = description;
     if (price !== undefined && price !== '') menuItem.price = Number(price);
@@ -133,7 +122,7 @@ export const updateMenuItem = async (req, res) => {
   }
 };
 
-// 4. Toggle Dish Availability (Verifies Shop Ownership)
+// 4. Toggle Dish Availability
 // Route: PATCH /api/menu/:id/toggle
 export const toggleMenuItemAvailability = async (req, res) => {
   try {
@@ -156,7 +145,7 @@ export const toggleMenuItemAvailability = async (req, res) => {
   }
 };
 
-// 5. Delete Dish (Verifies Shop Ownership)
+// 5. Delete Dish
 // Route: DELETE /api/menu/:id
 export const deleteMenuItem = async (req, res) => {
   try {

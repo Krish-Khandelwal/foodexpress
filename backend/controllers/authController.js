@@ -1,14 +1,49 @@
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
 import Shop from '../models/Shop.js';
 
-const generateToken = (id, role) => {
-  const secret = process.env.JWT_SECRET || 'fallback_jwt_secret_foodexpress';
-  return jwt.sign({ id, role }, secret, { expiresIn: '7d' });
+// Helper to create both Access Token and Refresh Token and store Refresh Token in DB
+const generateAccessAndRefreshTokens = async (userId) => {
+  const user = await User.findById(userId);
+  const accessToken = user.generateAccessToken();
+  const refreshToken = user.generateRefreshToken();
+
+  user.refreshToken = refreshToken;
+  await user.save({ validateBeforeSave: false });
+
+  return { accessToken, refreshToken };
 };
 
-// POST /api/auth/register (Public signup strictly forbids 'admin' role)
+const normalizeUserRole = (role) => {
+  const r = (role || 'customer').toLowerCase().trim();
+  if (['owner', 'vendor', 'restaurant'].includes(r)) return 'owner';
+  if (['rider', 'delivery', 'delivery_boy'].includes(r)) return 'rider';
+  return 'customer';
+};
+
+const decodeGoogleJwt = (token) => {
+  try {
+    const base64Url = token.split('.')[1];
+    if (!base64Url) return null;
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = Buffer.from(base64, 'base64').toString('utf8');
+    return JSON.parse(jsonPayload);
+  } catch {
+    return null;
+  }
+};
+
+// GET /api/auth/google-config
+export const getGoogleConfig = (req, res) => {
+  const clientId =
+    process.env.GOOGLE_CLIENT_ID ||
+    process.env.VITE_GOOGLE_CLIENT_ID ||
+    process.env.CLIENT_ID ||
+    '';
+  return res.status(200).json({ clientId: clientId.trim() });
+};
+
+// POST /api/auth/register
 export const registerUser = async (req, res) => {
   try {
     const {
@@ -35,10 +70,7 @@ export const registerUser = async (req, res) => {
       return res.status(400).json({ message: 'User already exists with this email' });
     }
 
-    // Security: Only allow customer, owner, or rider on public registration
-    const normalizedRole = ['customer', 'owner', 'rider'].includes(role?.toLowerCase())
-      ? role.toLowerCase()
-      : 'customer';
+    const normalizedRole = normalizeUserRole(role);
 
     const user = await User.create({
       name: name.trim(),
@@ -66,6 +98,8 @@ export const registerUser = async (req, res) => {
       });
     }
 
+    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id);
+
     return res.status(201).json({
       _id: user._id,
       name: user.name,
@@ -73,14 +107,16 @@ export const registerUser = async (req, res) => {
       phone: user.phone,
       role: user.role,
       shop,
-      token: generateToken(user._id, user.role),
+      accessToken,
+      refreshToken,
+      token: accessToken,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
 };
 
-// POST /api/auth/login (Authenticates against MongoDB, including seeded Admin)
+// POST /api/auth/login
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -89,13 +125,13 @@ export const loginUser = async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const user = await User.findOne({ email: normalizedEmail }).lean();
+    const user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await user.matchPassword(password);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
@@ -105,14 +141,18 @@ export const loginUser = async (req, res) => {
       shop = await Shop.findOne({ owner: user._id }).select('-image').lean();
     }
 
-    return res.json({
+    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id);
+
+    return res.status(200).json({
       _id: user._id,
       name: user.name,
       email: user.email,
       phone: user.phone,
       role: user.role,
       shop,
-      token: generateToken(user._id, user.role),
+      accessToken,
+      refreshToken,
+      token: accessToken,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -122,7 +162,30 @@ export const loginUser = async (req, res) => {
 // POST /api/auth/google
 export const googleAuth = async (req, res) => {
   try {
-    const { name, email } = req.body;
+    let { name, email, phone, credential, access_token } = req.body;
+
+    // 1. If Google OAuth2 access_token is sent, fetch profile from Google
+    if (!email && access_token) {
+      const googleRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${access_token}` },
+      });
+      if (!googleRes.ok) {
+        return res.status(401).json({ message: 'Failed to verify Google access token' });
+      }
+      const profile = await googleRes.json();
+      email = profile.email;
+      name = name || profile.name || profile.given_name;
+    }
+
+    // 2. If Google JWT credential is sent, decode it
+    if (!email && credential) {
+      const decoded = decodeGoogleJwt(credential);
+      if (decoded?.email) {
+        email = decoded.email;
+        name = name || decoded.name || decoded.given_name;
+      }
+    }
+
     if (!email) {
       return res.status(400).json({ message: 'Email is required for Google login' });
     }
@@ -132,9 +195,10 @@ export const googleAuth = async (req, res) => {
 
     if (!user) {
       user = await User.create({
-        name: name || normalizedEmail.split('@')[0],
+        name: (name || normalizedEmail.split('@')[0]).trim(),
         email: normalizedEmail,
-        password: Math.random().toString(36).slice(-10),
+        phone: phone || '',
+        password: Math.random().toString(36).slice(-10) + 'A1!',
         role: 'customer',
       });
     }
@@ -144,6 +208,8 @@ export const googleAuth = async (req, res) => {
       shop = await Shop.findOne({ owner: user._id }).select('-image').lean();
     }
 
+    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id);
+
     return res.status(200).json({
       _id: user._id,
       name: user.name,
@@ -151,8 +217,52 @@ export const googleAuth = async (req, res) => {
       phone: user.phone,
       role: user.role,
       shop,
-      token: generateToken(user._id, user.role),
+      accessToken,
+      refreshToken,
+      token: accessToken,
     });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// POST /api/auth/refresh-token
+export const refreshAccessToken = async (req, res) => {
+  try {
+    const incomingRefreshToken = req.body.refreshToken;
+    if (!incomingRefreshToken) {
+      return res.status(401).json({ message: 'Refresh token is required' });
+    }
+
+    const decoded = jwt.verify(
+      incomingRefreshToken,
+      process.env.REFRESH_TOKEN_SECRET || 'fallback_refresh_secret_foodexpress'
+    );
+
+    const user = await User.findById(decoded.id);
+    if (!user || user.refreshToken !== incomingRefreshToken) {
+      return res.status(401).json({ message: 'Invalid or expired refresh token' });
+    }
+
+    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id);
+
+    return res.status(200).json({
+      accessToken,
+      refreshToken,
+      token: accessToken,
+    });
+  } catch (error) {
+    return res.status(401).json({ message: 'Invalid or expired refresh token' });
+  }
+};
+
+// POST /api/auth/logout
+export const logoutUser = async (req, res) => {
+  try {
+    if (req.user?._id) {
+      await User.findByIdAndUpdate(req.user._id, { $set: { refreshToken: '' } });
+    }
+    return res.status(200).json({ message: 'Logged out successfully' });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }

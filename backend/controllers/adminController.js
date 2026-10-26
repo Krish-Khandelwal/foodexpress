@@ -27,17 +27,12 @@ export const ensureDefaultCategories = async () => {
 // Database Seeding on Server Start: Ensures Admin exists and matches .env credentials
 export const seedAdminUser = async () => {
   try {
-    const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase().trim();
-    const adminPassword = process.env.ADMIN_PASSWORD;
+    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@foodexpress.com')
+      .toLowerCase()
+      .trim();
+    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
     const adminName = process.env.ADMIN_NAME || 'FoodExpress Admin';
     const adminPhone = process.env.ADMIN_PHONE || '9999999999';
-
-    if (!adminEmail || !adminPassword) {
-      console.warn(
-        '⚠️ ADMIN_EMAIL or ADMIN_PASSWORD not set in .env. Skipping admin seeding.'
-      );
-      return;
-    }
 
     // Step 1: Check if an admin user already exists
     const existingAdmin = await User.findOne({
@@ -78,7 +73,7 @@ export const seedAdminUser = async () => {
 
     if (needsSave) {
       await existingAdmin.save();
-      console.log(`✅ Admin credentials synced with .env (${adminEmail})`);
+      console.log(`✅ Admin credentials synced (${adminEmail})`);
     } else {
       console.log(`✅ Admin account verified (${existingAdmin.email})`);
     }

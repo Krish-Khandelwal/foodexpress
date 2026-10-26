@@ -1,4 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
+import fs from 'fs';
+import path from 'path';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -18,27 +20,50 @@ const isCloudinaryConfigured = () => {
   );
 };
 
-export const uploadToCloudinary = async (fileStrOrBuffer) => {
-  if (!fileStrOrBuffer) return '';
+// Removes the temporary file from backend/public after Cloudinary upload
+const removeLocalFile = (localFilePath) => {
+  try {
+    if (localFilePath && fs.existsSync(localFilePath)) {
+      fs.unlinkSync(localFilePath);
+    }
+  } catch (err) {
+    console.error('Failed to delete temp file from public folder:', err.message);
+  }
+};
+
+export const uploadToCloudinary = async (localFilePathOrUrl) => {
+  if (!localFilePathOrUrl) return '';
 
   // If already a remote http/https URL, return as-is
-  if (typeof fileStrOrBuffer === 'string' && fileStrOrBuffer.startsWith('http')) {
-    return fileStrOrBuffer;
+  if (typeof localFilePathOrUrl === 'string' && localFilePathOrUrl.startsWith('http')) {
+    return localFilePathOrUrl;
   }
 
-  // Fallback to base64 data URI if Cloudinary is not configured in .env
+  // Fallback if Cloudinary keys are not configured in .env: serve directly from backend/public
   if (!isCloudinaryConfigured()) {
-    return typeof fileStrOrBuffer === 'string' ? fileStrOrBuffer : '';
+    if (fs.existsSync(localFilePathOrUrl)) {
+      const fileName = path.basename(localFilePathOrUrl);
+      const port = process.env.PORT || 5000;
+      return `http://localhost:${port}/public/${fileName}`;
+    }
+    return typeof localFilePathOrUrl === 'string' ? localFilePathOrUrl : '';
   }
 
   try {
-    const result = await cloudinary.uploader.upload(fileStrOrBuffer, {
+    // Upload the file from backend/public to Cloudinary
+    const result = await cloudinary.uploader.upload(localFilePathOrUrl, {
       folder: 'FoodExpress',
+      resource_type: 'auto',
     });
+
+    // Clean up local file from backend/public after successful upload
+    removeLocalFile(localFilePathOrUrl);
+
     return result.secure_url;
   } catch (error) {
-    console.error('Cloudinary upload failed, falling back to local data URI:', error.message);
-    return typeof fileStrOrBuffer === 'string' ? fileStrOrBuffer : '';
+    console.error('Cloudinary upload failed:', error.message);
+    removeLocalFile(localFilePathOrUrl);
+    return '';
   }
 };
 

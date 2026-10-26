@@ -1,50 +1,45 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useState, useEffect, useContext } from 'react';
+import { googleAuthLogin } from '../api/authApi';
 
 export const AuthContext = createContext();
 
-export const useAuth = () => useContext(AuthContext);
-
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    try {
-      const savedUser = localStorage.getItem('userInfo');
-      return savedUser ? JSON.parse(savedUser) : null;
-    } catch {
-      return null;
-    }
-  });
-  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     try {
-      const savedUser = localStorage.getItem('userInfo');
-      if (savedUser) {
-        setUser(JSON.parse(savedUser));
+      const storedUser = localStorage.getItem('userInfo');
+      if (storedUser) {
+        const parsed = JSON.parse(storedUser);
+        setUser(parsed);
       }
-    } catch {
+    } catch (error) {
+      console.error('Failed to parse stored userInfo:', error);
       localStorage.removeItem('userInfo');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   const login = (userData) => {
     localStorage.setItem('userInfo', JSON.stringify(userData));
+    if (userData?.token) {
+      localStorage.setItem('token', userData.token);
+    }
     setUser(userData);
   };
 
-  // Clears both user session and cart storage on logout so another user doesn't inherit the cart
-  const logout = () => {
-    localStorage.removeItem('userInfo');
-    localStorage.removeItem('foodexpress_cart');
-    setUser(null);
+  const googleLogin = async ({ name, email, credential }) => {
+    const { data } = await googleAuthLogin({ name, email, credential });
+    login(data);
+    return data;
   };
 
-  const updateUser = (updatedFields) => {
-    setUser((prev) => {
-      const next = { ...(prev || {}), ...updatedFields };
-      localStorage.setItem('userInfo', JSON.stringify(next));
-      return next;
-    });
+  const logout = () => {
+    localStorage.removeItem('userInfo');
+    localStorage.removeItem('token');
+    setUser(null);
   };
 
   return (
@@ -53,8 +48,8 @@ export const AuthProvider = ({ children }) => {
         user,
         setUser,
         login,
+        googleLogin,
         logout,
-        updateUser,
         loading,
       }}
     >
@@ -63,4 +58,6 @@ export const AuthProvider = ({ children }) => {
   );
 };
 
-export default AuthContext;
+export const useAuth = () => useContext(AuthContext);
+
+export default AuthProvider;

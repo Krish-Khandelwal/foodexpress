@@ -1,5 +1,7 @@
 import express from 'express';
 import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
 import { protect } from '../middleware/authMiddleware.js';
 import {
   createMenuItem,
@@ -15,9 +17,26 @@ import {
 
 const router = express.Router();
 
-// Store uploaded file in memory buffer so it can be uploaded directly to Cloudinary
+// Ensure backend/public directory exists
+const publicDir = path.resolve('public');
+if (!fs.existsSync(publicDir)) {
+  fs.mkdirSync(publicDir, { recursive: true });
+}
+
+// Step 1: Save uploaded food image to backend/public folder first
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, publicDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    const ext = path.extname(file.originalname);
+    cb(null, `food-${uniqueSuffix}${ext}`);
+  },
+});
+
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
 });
 
