@@ -164,7 +164,6 @@ export const googleAuth = async (req, res) => {
   try {
     let { name, email, phone, credential, access_token } = req.body;
 
-    // 1. If Google OAuth2 access_token is sent, fetch profile from Google
     if (!email && access_token) {
       const googleRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${access_token}` },
@@ -177,7 +176,6 @@ export const googleAuth = async (req, res) => {
       name = name || profile.name || profile.given_name;
     }
 
-    // 2. If Google JWT credential is sent, decode it
     if (!email && credential) {
       const decoded = decodeGoogleJwt(credential);
       if (decoded?.email) {
@@ -318,6 +316,39 @@ export const upsertMyShop = async (req, res) => {
     }
 
     return res.json({ message: 'Restaurant details saved', shop });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// PUT /api/auth/profile
+export const updateUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.name = req.body.name || user.name;
+    if (req.body.phone !== undefined) {
+      user.phone = req.body.phone;
+    }
+
+    await user.save();
+
+    let shop = null;
+    if (user.role === 'owner') {
+      shop = await Shop.findOne({ owner: user._id }).select('-image').lean();
+    }
+
+    return res.status(200).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      shop,
+    });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }

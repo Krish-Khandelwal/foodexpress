@@ -239,7 +239,7 @@ const DeliveryDashboard = () => {
                     <p className="text-sm font-semibold text-gray-800 mt-2 flex items-center gap-1">
                       <MapPin size={15} className="text-emerald-600 shrink-0" />
                       <span>
-                        Customer: {order.customer?.name || 'Customer'} — {englishCustomerAddress}
+                        Customer name: {order.customer?.name || 'Customer'} | Phone: {order.customer.phone || 'XXXXXXXXXX'} | Address: {englishCustomerAddress}
                       </span>
                     </p>
                   </div>
