@@ -2,7 +2,6 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Shop from '../models/Shop.js';
 
-// Helper to create both Access Token and Refresh Token and store Refresh Token in DB
 const generateAccessAndRefreshTokens = async (userId) => {
   const user = await User.findById(userId);
   const accessToken = user.generateAccessToken();
@@ -33,17 +32,10 @@ const decodeGoogleJwt = (token) => {
   }
 };
 
-// GET /api/auth/google-config
 export const getGoogleConfig = (req, res) => {
-  const clientId =
-    process.env.GOOGLE_CLIENT_ID ||
-    process.env.VITE_GOOGLE_CLIENT_ID ||
-    process.env.CLIENT_ID ||
-    '';
-  return res.status(200).json({ clientId: clientId.trim() });
+  return res.status(200).json({ clientId: process.env.GOOGLE_CLIENT_ID.trim() });
 };
 
-// POST /api/auth/register
 export const registerUser = async (req, res) => {
   try {
     const {
@@ -116,7 +108,6 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// POST /api/auth/login
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -138,7 +129,7 @@ export const loginUser = async (req, res) => {
 
     let shop = null;
     if (user.role === 'owner') {
-      shop = await Shop.findOne({ owner: user._id }).select('-image').lean();
+      shop = await Shop.findOne({ owner: user._id }).lean();
     }
 
     const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id);
@@ -159,7 +150,6 @@ export const loginUser = async (req, res) => {
   }
 };
 
-// POST /api/auth/google
 export const googleAuth = async (req, res) => {
   try {
     let { name, email, phone, credential, access_token } = req.body;
@@ -203,7 +193,7 @@ export const googleAuth = async (req, res) => {
 
     let shop = null;
     if (user.role === 'owner') {
-      shop = await Shop.findOne({ owner: user._id }).select('-image').lean();
+      shop = await Shop.findOne({ owner: user._id }).lean();
     }
 
     const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id);
@@ -224,7 +214,6 @@ export const googleAuth = async (req, res) => {
   }
 };
 
-// POST /api/auth/refresh-token
 export const refreshAccessToken = async (req, res) => {
   try {
     const incomingRefreshToken = req.body.refreshToken;
@@ -232,10 +221,7 @@ export const refreshAccessToken = async (req, res) => {
       return res.status(401).json({ message: 'Refresh token is required' });
     }
 
-    const decoded = jwt.verify(
-      incomingRefreshToken,
-      process.env.REFRESH_TOKEN_SECRET || 'fallback_refresh_secret_foodexpress'
-    );
+    const decoded = jwt.verify(incomingRefreshToken, process.env.REFRESH_TOKEN_SECRET);
 
     const user = await User.findById(decoded.id);
     if (!user || user.refreshToken !== incomingRefreshToken) {
@@ -254,7 +240,6 @@ export const refreshAccessToken = async (req, res) => {
   }
 };
 
-// POST /api/auth/logout
 export const logoutUser = async (req, res) => {
   try {
     if (req.user?._id) {
@@ -266,17 +251,15 @@ export const logoutUser = async (req, res) => {
   }
 };
 
-// GET /api/auth/my-shop
 export const getMyShop = async (req, res) => {
   try {
-    const shop = await Shop.findOne({ owner: req.user._id }).select('-image').lean();
+    const shop = await Shop.findOne({ owner: req.user._id }).lean();
     return res.json(shop);
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
 };
 
-// PUT /api/auth/my-shop
 export const upsertMyShop = async (req, res) => {
   try {
     const { name, address, phone, description, cuisine, isOpen, location } = req.body;
@@ -321,7 +304,6 @@ export const upsertMyShop = async (req, res) => {
   }
 };
 
-// PUT /api/auth/profile
 export const updateUserProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
@@ -338,7 +320,7 @@ export const updateUserProfile = async (req, res) => {
 
     let shop = null;
     if (user.role === 'owner') {
-      shop = await Shop.findOne({ owner: user._id }).select('-image').lean();
+      shop = await Shop.findOne({ owner: user._id }).lean();
     }
 
     return res.status(200).json({

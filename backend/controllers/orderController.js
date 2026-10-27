@@ -1,26 +1,15 @@
 import Order from '../models/Order.js';
 import Shop from '../models/Shop.js';
 import MenuItem from '../models/MenuItem.js';
-import razorpay, { isRazorpayConfigured } from '../config/razorpay.js';
+import razorpay from '../config/razorpay.js';
 import crypto from 'crypto';
 
-// Helper function to generate a random 4-digit OTP
 const generateOTP = () => {
   return Math.floor(1000 + Math.random() * 9000).toString();
 };
 
-// 1. Create Razorpay Order for Online Payment
-// Route: POST /api/orders/create-razorpay-order
 export const createRazorpayOrder = async (req, res) => {
   try {
-    // Step 1: Check if Razorpay keys are configured in .env
-    if (!isRazorpayConfigured()) {
-      return res.status(400).json({
-        message: 'Razorpay keys are not configured in backend/.env. Please use Cash on Delivery (COD).',
-      });
-    }
-
-    // Step 2: Prepare Razorpay order options (amount in paise)
     const { amount } = req.body;
     const amountInPaise = Math.max(100, Math.round(Number(amount) * 100));
 
@@ -30,7 +19,6 @@ export const createRazorpayOrder = async (req, res) => {
       receipt: `rcpt_${Date.now()}`,
     };
 
-    // Step 3: Create order on Razorpay server and send back to frontend
     const rzpOrder = await razorpay.orders.create(options);
 
     return res.status(200).json({
@@ -42,11 +30,8 @@ export const createRazorpayOrder = async (req, res) => {
   }
 };
 
-// 2. Create New Food Order (Single Restaurant Rule + Open Restaurant Check)
-// Route: POST /api/orders
 export const createOrder = async (req, res) => {
   try {
-    // Step 1: Extract order details from request body
     const {
       shopId,
       items,
@@ -59,12 +44,10 @@ export const createOrder = async (req, res) => {
       razorpaySignature,
     } = req.body;
 
-    // Step 2: Validate that the cart has items
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'Order must contain at least one item' });
     }
 
-    // Step 3: Fetch any missing shop info in ONE fast database query
     const menuIds = items
       .map((item) => item.menuItem || item._id)
       .filter(Boolean);
@@ -78,7 +61,6 @@ export const createOrder = async (req, res) => {
       menuMap[dbItem._id.toString()] = dbItem;
     }
 
-    // Step 4: Build clean order items list and collect unique restaurant IDs
     const enrichedItems = [];
     const shopIdSet = new Set();
 
@@ -112,18 +94,10 @@ export const createOrder = async (req, res) => {
       shopIdSet.add(shopId.toString());
     }
 
-    // Step 5: Block ordering from more than 1 restaurant at a time
     if (shopIdSet.size > 1) {
       return res.status(400).json({
         message: 'You can only order food from 1 restaurant at a time!',
       });
-    }
-
-    if (shopIdSet.size === 0) {
-      const fallbackShop = await Shop.findOne({ status: 'approved', isOpen: true }).lean();
-      if (fallbackShop) {
-        shopIdSet.add(fallbackShop._id.toString());
-      }
     }
 
     const uniqueShopIds = Array.from(shopIdSet);
@@ -131,7 +105,6 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ message: 'No restaurant found for this order' });
     }
 
-    // Step 6: Verify that the restaurant is approved and currently open
     const targetShop = await Shop.findById(uniqueShopIds[0]).lean();
     if (!targetShop || targetShop.status !== 'approved') {
       return res.status(400).json({ message: 'This restaurant is not currently approved for orders.' });
@@ -142,8 +115,7 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // Step 7: Verify Razorpay signature if paid online
-    if (razorpayOrderId && razorpayPaymentId && razorpaySignature && isRazorpayConfigured()) {
+    if (razorpayOrderId && razorpayPaymentId && razorpaySignature) {
       const signBody = `${razorpayOrderId}|${razorpayPaymentId}`;
       const expectedSignature = crypto
         .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
@@ -155,7 +127,6 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    // Step 8: Calculate final total and generate OTPs
     const customerOtp = generateOTP();
     const riderOtp = generateOTP();
 
@@ -175,11 +146,9 @@ export const createOrder = async (req, res) => {
       formattedAddress = deliveryAddress;
     }
 
-    // Step 9: Save order in MongoDB
     const order = await Order.create({
       customer: req.user._id,
       shop: uniqueShopIds[0],
-      shops: uniqueShopIds,
       items: enrichedItems,
       totalAmount: calculatedTotal,
       deliveryAddress: formattedAddress,
@@ -196,11 +165,9 @@ export const createOrder = async (req, res) => {
       customerOtp,
     });
 
-    // Step 10: Populate details and return response
     const populatedOrder = await Order.findById(order._id)
       .populate('customer', 'name email phone')
       .populate('shop', 'name address phone location rating numReviews')
-      .populate('shops', 'name address phone location')
       .populate('rider', 'name phone')
       .lean();
 
@@ -210,14 +177,11 @@ export const createOrder = async (req, res) => {
   }
 };
 
-// 3. Get Single Order By ID
-// Route: GET /api/orders/:id
 export const getOrderById = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
       .populate('customer', 'name email phone')
       .populate('shop', 'name address phone location rating numReviews')
-      .populate('shops', 'name address phone location')
       .populate('rider', 'name phone')
       .lean();
 
@@ -231,13 +195,10 @@ export const getOrderById = async (req, res) => {
   }
 };
 
-// 4. Get Logged-In Customer's Orders
-// Route: GET /api/orders/my-orders
 export const getCustomerOrders = async (req, res) => {
   try {
     const orders = await Order.find({ customer: req.user._id })
       .populate('shop', 'name address phone location rating numReviews')
-      .populate('shops', 'name address phone location')
       .populate('rider', 'name phone')
       .sort({ createdAt: -1 })
       .lean();
@@ -248,8 +209,6 @@ export const getCustomerOrders = async (req, res) => {
   }
 };
 
-// 5. Get Restaurant Owner's Orders (Shows riderOtp to Owner)
-// Route: GET /api/orders/owner-orders
 export const getOwnerOrders = async (req, res) => {
   try {
     const shop = await Shop.findOne({ owner: req.user._id }).lean();
@@ -258,16 +217,14 @@ export const getOwnerOrders = async (req, res) => {
     }
 
     const orders = await Order.find({
-      $or: [{ shop: shop._id }, { shops: shop._id }, { 'items.shop': shop._id }],
+      $or: [{ shop: shop._id }, { 'items.shop': shop._id }],
     })
       .populate('customer', 'name email phone')
       .populate('shop', 'name address phone location')
-      .populate('shops', 'name address phone location')
       .populate('rider', 'name phone')
       .sort({ createdAt: -1 })
       .lean();
 
-    // Hide customerOtp from Owner, but keep riderOtp so Owner can share Pickup Code with Rider
     const sanitizedOrders = orders.map((orderItem) => {
       const copy = { ...orderItem };
       delete copy.customerOtp;
@@ -280,8 +237,6 @@ export const getOwnerOrders = async (req, res) => {
   }
 };
 
-// 6. Update Order Status by Restaurant Owner
-// Route: PUT /api/orders/:id/status
 export const updateOrderStatusByOwner = async (req, res) => {
   try {
     const { status } = req.body;
@@ -296,14 +251,12 @@ export const updateOrderStatusByOwner = async (req, res) => {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    // Block modifying orders that are already out for delivery, delivered, or cancelled
     if (['out for delivery', 'delivered', 'cancelled'].includes(order.status)) {
       return res.status(400).json({
         message: `Cannot change status because order is already ${order.status}.`,
       });
     }
 
-    // Verify shop ownership
     const shop = await Shop.findOne({ owner: req.user._id }).lean();
     if (shop && order.shop.toString() !== shop._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized to update this order' });
@@ -311,7 +264,6 @@ export const updateOrderStatusByOwner = async (req, res) => {
 
     order.status = status;
 
-    // Ensure Pickup Code exists when order is marked Ready
     if (status === 'ready' && !order.riderOtp) {
       order.riderOtp = generateOTP();
     }
@@ -323,8 +275,6 @@ export const updateOrderStatusByOwner = async (req, res) => {
   }
 };
 
-// 7. Cancel Order by Customer (Only allowed while 'pending' or 'preparing')
-// Route: PUT /api/orders/:id/cancel
 export const cancelOrderByCustomer = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
@@ -347,7 +297,6 @@ export const cancelOrderByCustomer = async (req, res) => {
       return res.status(400).json({ message: 'Order is already cancelled' });
     }
 
-    // Customers can only cancel before the order is marked 'ready' or picked up
     if (!['pending', 'preparing'].includes(order.status) && !isAdmin) {
       return res.status(400).json({
         message: `Order cannot be cancelled once it is ${order.status}.`,
@@ -364,8 +313,6 @@ export const cancelOrderByCustomer = async (req, res) => {
   }
 };
 
-// 8. Rate Food Quality by Customer (Only after order is 'delivered' and once per order)
-// Route: POST /api/orders/:id/rate
 export const rateOrderByCustomer = async (req, res) => {
   try {
     const { rating, review } = req.body;
@@ -388,23 +335,19 @@ export const rateOrderByCustomer = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to rate this order' });
     }
 
-    // Step 1: Ensure order is delivered before allowing food rating
     if (order.status !== 'delivered') {
       return res.status(400).json({
         message: 'You can rate food quality only after your order is delivered.',
       });
     }
 
-    // Step 2: Check if this order was already rated previously
     const isFirstTimeRating = !order.rating;
 
-    // Step 3: Save rating on the Order
     order.rating = numericRating;
     order.review = (review || '').trim();
     order.ratedAt = new Date();
     await order.save();
 
-    // Step 4: Recalculate Restaurant average rating across all rated orders
     if (order.shop?._id) {
       const ratedOrders = await Order.find({
         shop: order.shop._id,
@@ -424,7 +367,6 @@ export const rateOrderByCustomer = async (req, res) => {
       }
     }
 
-    // Step 5: Increment MenuItems review count only on first rating for this order
     if (isFirstTimeRating) {
       const itemUpdates = order.items
         .filter((item) => item.menuItem)
@@ -450,8 +392,6 @@ export const rateOrderByCustomer = async (req, res) => {
   }
 };
 
-// 9. Accept Delivery by Rider (Only when order is 'ready')
-// Route: PUT /api/orders/:id/accept-delivery
 export const acceptDeliveryByRider = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id).populate('shop', 'location');
@@ -492,7 +432,6 @@ export const acceptDeliveryByRider = async (req, res) => {
     const populated = await Order.findById(order._id)
       .populate('customer', 'name phone')
       .populate('shop', 'name address phone location')
-      .populate('shops', 'name address phone location')
       .populate('rider', 'name phone')
       .lean();
 
@@ -505,8 +444,6 @@ export const acceptDeliveryByRider = async (req, res) => {
   }
 };
 
-// 10. Update Rider Live GPS Location
-// Route: PUT /api/orders/:id/rider-location
 export const updateRiderLocation = async (req, res) => {
   try {
     const { lat, lng } = req.body;
@@ -538,8 +475,6 @@ export const updateRiderLocation = async (req, res) => {
   }
 };
 
-// 11. Verify Restaurant Pickup Code -> Switches Rider Map to Customer Path
-// Route: POST /api/orders/:id/verify-pickup-otp
 export const verifyPickupOtpByOwner = async (req, res) => {
   try {
     const { otp, lat, lng } = req.body;
@@ -576,7 +511,6 @@ export const verifyPickupOtpByOwner = async (req, res) => {
     const populated = await Order.findById(order._id)
       .populate('customer', 'name phone')
       .populate('shop', 'name address phone location')
-      .populate('shops', 'name address phone location')
       .populate('rider', 'name phone')
       .lean();
 
@@ -589,8 +523,6 @@ export const verifyPickupOtpByOwner = async (req, res) => {
   }
 };
 
-// 12. Verify Customer Delivery OTP -> Marks Order Delivered
-// Route: POST /api/orders/:id/verify-delivery-otp
 export const verifyDeliveryOtpByRider = async (req, res) => {
   try {
     const { otp } = req.body;
@@ -621,8 +553,6 @@ export const verifyDeliveryOtpByRider = async (req, res) => {
   }
 };
 
-// 13. Get Available ('ready') and Accepted Orders for Rider
-// Route: GET /api/orders/rider/available
 export const getRiderOrders = async (req, res) => {
   try {
     const orders = await Order.find({
@@ -633,11 +563,9 @@ export const getRiderOrders = async (req, res) => {
     })
       .populate('customer', 'name phone')
       .populate('shop', 'name address phone location')
-      .populate('shops', 'name address phone location')
       .sort({ createdAt: -1 })
       .lean();
 
-    // Hide both riderOtp and customerOtp from Rider screen
     const sanitizedOrders = orders.map((orderItem) => {
       const copy = { ...orderItem };
       delete copy.riderOtp;

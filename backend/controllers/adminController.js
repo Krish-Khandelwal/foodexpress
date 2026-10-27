@@ -24,22 +24,17 @@ export const ensureDefaultCategories = async () => {
   }
 };
 
-// Database Seeding on Server Start: Ensures Admin exists and matches .env credentials
 export const seedAdminUser = async () => {
   try {
-    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@foodexpress.com')
-      .toLowerCase()
-      .trim();
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-    const adminName = process.env.ADMIN_NAME || 'FoodExpress Admin';
-    const adminPhone = process.env.ADMIN_PHONE || '9999999999';
+    const adminEmail = process.env.ADMIN_EMAIL.toLowerCase().trim();
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    const adminName = process.env.ADMIN_NAME;
+    const adminPhone = process.env.ADMIN_PHONE;
 
-    // Step 1: Check if an admin user already exists
     const existingAdmin = await User.findOne({
       $or: [{ email: adminEmail }, { role: 'admin' }],
     });
 
-    // Step 2: Create admin if not found
     if (!existingAdmin) {
       await User.create({
         name: adminName,
@@ -48,11 +43,10 @@ export const seedAdminUser = async () => {
         phone: adminPhone,
         role: 'admin',
       });
-      console.log(`✅ Admin seeded in database (${adminEmail})`);
+      console.log(`Admin seeded in database (${adminEmail})`);
       return;
     }
 
-    // Step 3: Keep existing admin synced with .env email & password
     let needsSave = false;
 
     if (existingAdmin.role !== 'admin') {
@@ -73,16 +67,15 @@ export const seedAdminUser = async () => {
 
     if (needsSave) {
       await existingAdmin.save();
-      console.log(`✅ Admin credentials synced (${adminEmail})`);
+      console.log(`Admin credentials synced (${adminEmail})`);
     } else {
-      console.log(`✅ Admin account verified (${existingAdmin.email})`);
+      console.log(`Admin account verified (${existingAdmin.email})`);
     }
   } catch (error) {
-    console.error(`❌ Admin seeding error: ${error.message}`);
+    console.error(`Admin seeding error: ${error.message}`);
   }
 };
 
-// GET /api/admin/categories
 export const getCategories = async (req, res) => {
   try {
     await ensureDefaultCategories();
@@ -93,7 +86,6 @@ export const getCategories = async (req, res) => {
   }
 };
 
-// POST /api/admin/categories
 export const addCategory = async (req, res) => {
   try {
     const { name } = req.body;
@@ -117,7 +109,6 @@ export const addCategory = async (req, res) => {
   }
 };
 
-// DELETE /api/admin/categories/:id
 export const deleteCategory = async (req, res) => {
   try {
     await Category.findByIdAndDelete(req.params.id);
@@ -127,7 +118,6 @@ export const deleteCategory = async (req, res) => {
   }
 };
 
-// GET /api/admin/pending-vendors
 export const getPendingVendors = async (req, res) => {
   try {
     const vendors = await Shop.find()
@@ -140,7 +130,6 @@ export const getPendingVendors = async (req, res) => {
   }
 };
 
-// PUT /api/admin/vendor-status/:id
 export const updateVendorStatus = async (req, res) => {
   try {
     const { status } = req.body;
@@ -165,7 +154,6 @@ export const updateVendorStatus = async (req, res) => {
   }
 };
 
-// GET /api/admin/stats
 export const getDashboardStats = async (req, res) => {
   try {
     await ensureDefaultCategories();
@@ -175,7 +163,6 @@ export const getDashboardStats = async (req, res) => {
       Order.find()
         .populate('customer', 'name email phone')
         .populate('shop', 'name')
-        .populate('shops', 'name')
         .populate('rider', 'name phone')
         .sort({ createdAt: -1 })
         .lean(),

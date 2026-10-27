@@ -14,9 +14,7 @@ export const protect = async (req, res, next) => {
   }
 
   try {
-    const secret =
-      process.env.ACCESS_TOKEN_SECRET || 'fallback_access_secret_foodexpress';
-    const decoded = jwt.verify(token, secret);
+    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
 
     const user = await User.findById(decoded.id).select('-password');
     if (!user) {
@@ -26,7 +24,6 @@ export const protect = async (req, res, next) => {
     req.user = user;
     return next();
   } catch (error) {
-    console.error('Access token verification failed:', error.message);
     return res.status(401).json({ message: 'Not authorized, access token expired or failed' });
   }
 };

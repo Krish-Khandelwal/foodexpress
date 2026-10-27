@@ -1,23 +1,24 @@
 import axios from 'axios';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL;
+
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  baseURL: API_BASE_URL,
   withCredentials: true,
 });
 
-// Attach Access Token to every outgoing request
 API.interceptors.request.use(
   (config) => {
-    const rawUser = localStorage.getItem('userInfo');
-    if (rawUser) {
+    const storedUser = localStorage.getItem('userInfo');
+    if (storedUser) {
       try {
-        const userInfo = JSON.parse(rawUser);
-        const token = userInfo?.accessToken || userInfo?.token;
+        const parsed = JSON.parse(storedUser);
+        const token = parsed?.accessToken || parsed?.token;
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
       } catch {
-        // ignore JSON parse error
+        localStorage.removeItem('userInfo');
       }
     }
     return config;
@@ -25,7 +26,6 @@ API.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Automatically use Refresh Token if Access Token expires (401)
 API.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -33,39 +33,36 @@ API.interceptors.response.use(
 
     if (
       error.response?.status === 401 &&
-      !originalRequest?._retry &&
-      !originalRequest?.url?.includes('/auth/login') &&
-      !originalRequest?.url?.includes('/auth/refresh-token')
+      originalRequest &&
+      !originalRequest._retry &&
+      !originalRequest.url?.includes('/auth/login') &&
+      !originalRequest.url?.includes('/auth/refresh-token')
     ) {
       originalRequest._retry = true;
 
       try {
-        const rawUser = localStorage.getItem('userInfo');
-        const userInfo = rawUser ? JSON.parse(rawUser) : null;
+        const storedUser = localStorage.getItem('userInfo');
+        if (!storedUser) throw new Error('No stored session');
 
-        if (userInfo?.refreshToken) {
-          const { data } = await axios.post(
-            'http://localhost:5000/api/auth/refresh-token',
-            { refreshToken: userInfo.refreshToken }
-          );
+        const parsed = JSON.parse(storedUser);
+        if (!parsed?.refreshToken) throw new Error('No refresh token available');
 
-          const updatedUser = {
-            ...userInfo,
-            accessToken: data.accessToken,
-            refreshToken: data.refreshToken,
-            token: data.accessToken,
-          };
+        const { data } = await axios.post(`${API_BASE_URL}/auth/refresh-token`, {
+          refreshToken: parsed.refreshToken,
+        });
 
-          localStorage.setItem('userInfo', JSON.stringify(updatedUser));
-          localStorage.setItem('token', data.accessToken);
+        const updatedUser = {
+          ...parsed,
+          accessToken: data.accessToken,
+          refreshToken: data.refreshToken,
+          token: data.accessToken,
+        };
 
-          originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
-          return API(originalRequest);
-        }
+        localStorage.setItem('userInfo', JSON.stringify(updatedUser));
+        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
+        return API(originalRequest);
       } catch (refreshError) {
         localStorage.removeItem('userInfo');
-        localStorage.removeItem('token');
-        window.location.href = '/login';
         return Promise.reject(refreshError);
       }
     }
