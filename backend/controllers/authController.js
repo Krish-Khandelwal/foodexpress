@@ -2,6 +2,32 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Shop from '../models/Shop.js';
 
+const getCookieOptions = (maxAgeMs) => {
+  const isSecure = process.env.CORS_ORIGIN.startsWith('https://');
+  return {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: isSecure ? 'none' : 'lax',
+    maxAge: maxAgeMs,
+  };
+};
+
+const setAuthCookies = (res, accessToken, refreshToken) => {
+  res.cookie('accessToken', accessToken, getCookieOptions(24 * 60 * 60 * 1000));
+  res.cookie('refreshToken', refreshToken, getCookieOptions(7 * 24 * 60 * 60 * 1000));
+};
+
+const clearAuthCookies = (res) => {
+  const isSecure = process.env.CORS_ORIGIN.startsWith('https://');
+  const options = {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: isSecure ? 'none' : 'lax',
+  };
+  res.clearCookie('accessToken', options);
+  res.clearCookie('refreshToken', options);
+};
+
 const generateAccessAndRefreshTokens = async (userId) => {
   const user = await User.findById(userId);
   const accessToken = user.generateAccessToken();
@@ -20,22 +46,28 @@ const normalizeUserRole = (role) => {
   return 'customer';
 };
 
-const decodeGoogleJwt = (token) => {
+// GET /api/auth/me
+export const getCurrentUser = async (req, res) => {
   try {
-    const base64Url = token.split('.')[1];
-    if (!base64Url) return null;
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = Buffer.from(base64, 'base64').toString('utf8');
-    return JSON.parse(jsonPayload);
-  } catch {
-    return null;
+    let shop = null;
+    if (req.user.role === 'owner') {
+      shop = await Shop.findOne({ owner: req.user._id }).lean();
+    }
+
+    return res.status(200).json({
+      _id: req.user._id,
+      name: req.user.name,
+      email: req.user.email,
+      phone: req.user.phone,
+      role: req.user.role,
+      shop,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };
 
-export const getGoogleConfig = (req, res) => {
-  return res.status(200).json({ clientId: process.env.GOOGLE_CLIENT_ID.trim() });
-};
-
+// POST /api/auth/register
 export const registerUser = async (req, res) => {
   try {
     const {
@@ -91,6 +123,7 @@ export const registerUser = async (req, res) => {
     }
 
     const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id);
+    setAuthCookies(res, accessToken, refreshToken);
 
     return res.status(201).json({
       _id: user._id,
@@ -99,15 +132,13 @@ export const registerUser = async (req, res) => {
       phone: user.phone,
       role: user.role,
       shop,
-      accessToken,
-      refreshToken,
-      token: accessToken,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
 };
 
+// POST /api/auth/login
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -133,6 +164,7 @@ export const loginUser = async (req, res) => {
     }
 
     const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id);
+    setAuthCookies(res, accessToken, refreshToken);
 
     return res.status(200).json({
       _id: user._id,
@@ -141,18 +173,16 @@ export const loginUser = async (req, res) => {
       phone: user.phone,
       role: user.role,
       shop,
-      accessToken,
-      refreshToken,
-      token: accessToken,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
 };
 
+// POST /api/auth/google
 export const googleAuth = async (req, res) => {
   try {
-    let { name, email, phone, credential, access_token } = req.body;
+    let { name, email, phone, access_token } = req.body;
 
     if (!email && access_token) {
       const googleRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -164,14 +194,6 @@ export const googleAuth = async (req, res) => {
       const profile = await googleRes.json();
       email = profile.email;
       name = name || profile.name || profile.given_name;
-    }
-
-    if (!email && credential) {
-      const decoded = decodeGoogleJwt(credential);
-      if (decoded?.email) {
-        email = decoded.email;
-        name = name || decoded.name || decoded.given_name;
-      }
     }
 
     if (!email) {
@@ -197,6 +219,7 @@ export const googleAuth = async (req, res) => {
     }
 
     const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id);
+    setAuthCookies(res, accessToken, refreshToken);
 
     return res.status(200).json({
       _id: user._id,
@@ -205,52 +228,54 @@ export const googleAuth = async (req, res) => {
       phone: user.phone,
       role: user.role,
       shop,
-      accessToken,
-      refreshToken,
-      token: accessToken,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
 };
 
+// POST /api/auth/refresh-token
 export const refreshAccessToken = async (req, res) => {
   try {
-    const incomingRefreshToken = req.body.refreshToken;
+    const incomingRefreshToken = req.cookies?.refreshToken;
     if (!incomingRefreshToken) {
-      return res.status(401).json({ message: 'Refresh token is required' });
+      return res.status(401).json({ message: 'Refresh token cookie is required' });
     }
 
     const decoded = jwt.verify(incomingRefreshToken, process.env.REFRESH_TOKEN_SECRET);
 
     const user = await User.findById(decoded.id);
     if (!user || user.refreshToken !== incomingRefreshToken) {
+      clearAuthCookies(res);
       return res.status(401).json({ message: 'Invalid or expired refresh token' });
     }
 
     const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id);
+    setAuthCookies(res, accessToken, refreshToken);
 
-    return res.status(200).json({
-      accessToken,
-      refreshToken,
-      token: accessToken,
-    });
+    return res.status(200).json({ message: 'Token refreshed successfully' });
   } catch (error) {
+    clearAuthCookies(res);
     return res.status(401).json({ message: 'Invalid or expired refresh token' });
   }
 };
 
+// POST /api/auth/logout
 export const logoutUser = async (req, res) => {
   try {
-    if (req.user?._id) {
-      await User.findByIdAndUpdate(req.user._id, { $set: { refreshToken: '' } });
+    const refreshToken = req.cookies?.refreshToken;
+    if (refreshToken) {
+      await User.findOneAndUpdate({ refreshToken }, { $set: { refreshToken: '' } });
     }
+    clearAuthCookies(res);
     return res.status(200).json({ message: 'Logged out successfully' });
   } catch (error) {
+    clearAuthCookies(res);
     return res.status(500).json({ message: error.message });
   }
 };
 
+// GET /api/auth/my-shop
 export const getMyShop = async (req, res) => {
   try {
     const shop = await Shop.findOne({ owner: req.user._id }).lean();
@@ -260,6 +285,7 @@ export const getMyShop = async (req, res) => {
   }
 };
 
+// PUT /api/auth/my-shop
 export const upsertMyShop = async (req, res) => {
   try {
     const { name, address, phone, description, cuisine, isOpen, location } = req.body;
@@ -304,6 +330,7 @@ export const upsertMyShop = async (req, res) => {
   }
 };
 
+// PUT /api/auth/profile
 export const updateUserProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);

@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { googleAuthLogin } from '../api/authApi';
+import API from '../api/axios';
 
 export const AuthContext = createContext();
 
@@ -8,38 +8,32 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem('userInfo');
-      if (storedUser) {
-        const parsed = JSON.parse(storedUser);
-        setUser(parsed);
+    const checkLoggedInUser = async () => {
+      try {
+        const { data } = await API.get('/auth/me');
+        setUser(data);
+      } catch {
+        setUser(null);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error('Failed to parse stored userInfo:', error);
-      localStorage.removeItem('userInfo');
-    } finally {
-      setLoading(false);
-    }
+    };
+
+    checkLoggedInUser();
   }, []);
 
   const login = (userData) => {
-    localStorage.setItem('userInfo', JSON.stringify(userData));
-    if (userData?.token) {
-      localStorage.setItem('token', userData.token);
-    }
     setUser(userData);
   };
 
-  const googleLogin = async ({ name, email, credential }) => {
-    const { data } = await googleAuthLogin({ name, email, credential });
-    login(data);
-    return data;
-  };
-
-  const logout = () => {
-    localStorage.removeItem('userInfo');
-    localStorage.removeItem('token');
-    setUser(null);
+  const logout = async () => {
+    try {
+      await API.post('/auth/logout');
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setUser(null);
+    }
   };
 
   return (
@@ -48,7 +42,6 @@ export const AuthProvider = ({ children }) => {
         user,
         setUser,
         login,
-        googleLogin,
         logout,
         loading,
       }}

@@ -4,7 +4,7 @@ import {
   registerUser,
   loginUser,
   googleAuth,
-  getGoogleConfig,
+  getCurrentUser,
   refreshAccessToken,
   logoutUser,
   getMyShop,
@@ -17,12 +17,12 @@ const router = express.Router();
 router.post('/register', registerUser);
 router.post('/login', loginUser);
 router.post('/google', googleAuth);
-router.get('/google-config', getGoogleConfig);
 router.post('/refresh-token', refreshAccessToken);
-router.post('/logout', protect, logoutUser);
+router.post('/logout', logoutUser);
+
+router.get('/me', protect, getCurrentUser);
 router.put('/profile', protect, updateUserProfile);
 
-// Restaurant Owner routes
 router.get('/my-shop', protect, getMyShop);
 router.put('/my-shop', protect, upsertMyShop);
 

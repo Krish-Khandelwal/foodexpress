@@ -11,7 +11,6 @@ import API from '../../api/axios';
 import { AuthContext } from '../../context/AuthContext';
 import LocationMap from '../../components/Maps/LocationMap';
 
-// Helper: Removes any Hindi/Devanagari characters so addresses stay in English
 const cleanEnglishAddress = (text) => {
   if (!text) return 'Customer Address';
   const cleaned = String(text)
@@ -38,7 +37,6 @@ const DeliveryDashboard = () => {
     ordersRef.current = orders;
   }, [orders]);
 
-  // Step 1: Fetch available ('ready') and rider's active orders
   const fetchOrders = async () => {
     try {
       const { data } = await API.get('/orders/rider/available');
@@ -56,12 +54,10 @@ const DeliveryDashboard = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Step 2: Send Rider's live GPS location to backend (throttled to prevent lag)
   const syncRiderLocationToActiveOrders = async (lat, lng, forceSend = false) => {
     setLiveCoords({ lat, lng });
 
     const now = Date.now();
-    // Only send API request at most once every 8 seconds unless forced
     if (!forceSend && now - lastGpsSentTimeRef.current < 8000) {
       return;
     }
@@ -83,7 +79,6 @@ const DeliveryDashboard = () => {
     );
   };
 
-  // Step 3: Watch Rider's live GPS position smoothly
   useEffect(() => {
     if (!navigator.geolocation || !user?._id) return;
 
@@ -99,7 +94,6 @@ const DeliveryDashboard = () => {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [user?._id]);
 
-  // Step 4: Manual GPS sync button handler
   const handleManualGpsSync = () => {
     if (!navigator.geolocation) {
       alert('Geolocation is not supported by your browser.');
@@ -118,7 +112,6 @@ const DeliveryDashboard = () => {
     );
   };
 
-  // Step 5: Rider clicks "Accept Delivery"
   const handleAcceptDelivery = async (orderId) => {
     try {
       const payload = liveCoords
@@ -131,7 +124,6 @@ const DeliveryDashboard = () => {
     }
   };
 
-  // Step 6: Rider enters Pickup Code at the Restaurant
   const handleVerifyPickupCode = async (orderId) => {
     const code = pickupCodeInput[orderId];
     if (!code) {
@@ -150,7 +142,6 @@ const DeliveryDashboard = () => {
     }
   };
 
-  // Step 7: Rider enters Customer Delivery OTP at customer's address
   const handleVerifyDeliveryOtp = async (orderId) => {
     const otp = deliveryOtpInput[orderId];
     if (!otp) {
@@ -239,7 +230,7 @@ const DeliveryDashboard = () => {
                     <p className="text-sm font-semibold text-gray-800 mt-2 flex items-center gap-1">
                       <MapPin size={15} className="text-emerald-600 shrink-0" />
                       <span>
-                        Customer name: {order.customer?.name || 'Customer'} | Phone: {order.customer.phone || 'XXXXXXXXXX'} | Address: {englishCustomerAddress}
+                        Customer name: {order.customer?.name || 'Customer'} | Phone: {order.customer?.phone || 'N/A'} | Address: {englishCustomerAddress}
                       </span>
                     </p>
                   </div>
@@ -262,7 +253,6 @@ const DeliveryDashboard = () => {
                   </div>
                 </div>
 
-                {/* Accept Delivery button shows ONLY when order is Ready */}
                 {!order.rider && order.status === 'ready' && !isDelivered && (
                   <button
                     onClick={() => handleAcceptDelivery(order._id)}

@@ -17,13 +17,11 @@ import {
 
 const router = express.Router();
 
-// Ensure backend/public directory exists
 const publicDir = path.resolve('public');
 if (!fs.existsSync(publicDir)) {
   fs.mkdirSync(publicDir, { recursive: true });
 }
 
-// Step 1: Save uploaded food image to backend/public folder first
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, publicDir);
@@ -37,7 +35,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  limits: { fileSize: 10 * 1024 * 1024 },
 });
 
 router.get('/', getAllMenu);
@@ -45,7 +43,6 @@ router.get('/categories', getMenuCategories);
 router.get('/shops', getApprovedShops);
 router.get('/shops/:shopId/menu', getShopMenu);
 router.get('/my-menu', protect, getOwnerMenu);
-router.get('/owner', protect, getOwnerMenu);
 router.post('/', protect, upload.single('image'), createMenuItem);
 router.put('/:id', protect, upload.single('image'), updateMenuItem);
 router.patch('/:id/toggle', protect, toggleMenuItemAvailability);

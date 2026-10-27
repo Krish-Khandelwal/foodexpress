@@ -35,14 +35,11 @@ export const CartProvider = ({ children }) => {
     localStorage.setItem('foodexpress_cart', JSON.stringify(cartItems));
   }, [cartItems]);
 
-  const openCart = () => setIsCartOpen(true);
-  const closeCart = () => setIsCartOpen(false);
   const toggleCart = () => setIsCartOpen((prev) => !prev);
 
   const addToCart = (item) => {
     const incomingShopId = getItemShopId(item);
 
-    // Enforce ordering from only 1 restaurant at a time
     if (cartItems.length > 0) {
       const currentShopId = getItemShopId(cartItems[0]);
       if (
@@ -116,20 +113,15 @@ export const CartProvider = ({ children }) => {
   return (
     <CartContext.Provider
       value={{
-        cart: cartItems,
         cartItems,
         isCartOpen,
         setIsCartOpen,
-        openCart,
-        closeCart,
         toggleCart,
         addToCart,
         removeFromCart,
         updateQuantity,
         clearCart,
         cartTotal,
-        totalPrice: cartTotal,
-        totalAmount: cartTotal,
         cartCount,
       }}
     >

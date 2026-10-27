@@ -8,11 +8,11 @@ import {
   Shield,
   ClipboardList,
   UserCog,
-  X
+  X,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
-import { updateProfile } from '../../api/authApi';
+import API from '../../api/axios';
 
 const Navbar = ({ toggleCart, onOpenOrders }) => {
   const { user, logout, setUser } = useAuth();
@@ -51,11 +51,11 @@ const Navbar = ({ toggleCart, onOpenOrders }) => {
     e.preventDefault();
     setUpdatingProfile(true);
     try {
-      const { data } = await updateProfile({ name: profileName, phone: profilePhone });
-      // Keep existing tokens intact while patching updated info
-      const updatedUser = { ...user, ...data };
-      localStorage.setItem('userInfo', JSON.stringify(updatedUser));
-      setUser(updatedUser);
+      const { data } = await API.put('/auth/profile', {
+        name: profileName,
+        phone: profilePhone,
+      });
+      setUser((prev) => ({ ...prev, ...data }));
       setShowProfileModal(false);
       alert('Profile updated successfully!');
     } catch (err) {
@@ -63,6 +63,11 @@ const Navbar = ({ toggleCart, onOpenOrders }) => {
     } finally {
       setUpdatingProfile(false);
     }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
   };
 
   return (
@@ -143,8 +148,7 @@ const Navbar = ({ toggleCart, onOpenOrders }) => {
                       {role}
                     </p>
                   </div>
-                  
-                  {/* Profile Edit Button: Specifically for Customer and Rider */}
+
                   {(role === 'customer' || role === 'rider') && (
                     <button
                       onClick={handleOpenProfile}
@@ -156,10 +160,7 @@ const Navbar = ({ toggleCart, onOpenOrders }) => {
                   )}
 
                   <button
-                    onClick={() => {
-                      logout();
-                      navigate('/login');
-                    }}
+                    onClick={handleLogout}
                     className="p-2 text-gray-500 hover:text-red-600 bg-gray-100 hover:bg-red-50 rounded-xl cursor-pointer transition"
                     title="Logout"
                   >
@@ -187,7 +188,6 @@ const Navbar = ({ toggleCart, onOpenOrders }) => {
         </div>
       </nav>
 
-      {/* Global Profile Settings Modal */}
       {showProfileModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl relative">
@@ -202,7 +202,9 @@ const Navbar = ({ toggleCart, onOpenOrders }) => {
             </h2>
             <form onSubmit={handleUpdateProfile} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Full Name
+                </label>
                 <input
                   type="text"
                   required
@@ -212,7 +214,9 @@ const Navbar = ({ toggleCart, onOpenOrders }) => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone Number
+                </label>
                 <input
                   type="tel"
                   value={profilePhone}

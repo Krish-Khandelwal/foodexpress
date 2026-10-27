@@ -14,7 +14,6 @@ import ShopDashboard from './pages/Owner/ShopDashboard';
 import MenuManagement from './pages/Owner/MenuManagement';
 import DeliveryDashboard from './pages/Delivery/DeliveryDashboard';
 import AdminDashboard from './pages/Admin/AdminDashboard';
-import VendorApprovals from './pages/Admin/VendorApprovals';
 
 const getRoleHomePath = (user) => {
   if (!user) return '/login';
@@ -53,7 +52,6 @@ const AppRoutes = () => {
         />
       )}
       <Routes>
-        {/* Login / Signup comes first if user is not logged in */}
         <Route
           path="/"
           element={
@@ -63,7 +61,6 @@ const AppRoutes = () => {
               <Navigate to={getRoleHomePath(user)} replace />
             ) : (
               <Home
-                toggleCart={() => setIsCartOpen(true)}
                 showOrdersModal={showOrdersModal}
                 setShowOrdersModal={setShowOrdersModal}
               />
@@ -101,10 +98,6 @@ const AppRoutes = () => {
         <Route
           path="/admin"
           element={user ? <AdminDashboard /> : <Navigate to="/login" replace />}
-        />
-        <Route
-          path="/admin/vendors"
-          element={user ? <VendorApprovals /> : <Navigate to="/login" replace />}
         />
         <Route path="*" element={<Navigate to={user ? '/' : '/login'} replace />} />
       </Routes>
