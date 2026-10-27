@@ -188,7 +188,7 @@ const LocationMap = ({
   const stageKey = `${viewerRole}-${riderAssigned}-${isPickedUp}`;
 
   return (
-    <div className="w-full rounded-2xl overflow-hidden border border-gray-200 shadow-sm bg-white">
+    <div className="relative z-0 w-full rounded-2xl overflow-hidden border border-gray-200 shadow-sm bg-white">
       <div className="bg-slate-900 text-white px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold">
         <div className="flex items-center gap-2">
           <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -206,11 +206,11 @@ const LocationMap = ({
         )}
       </div>
 
-      <div style={{ height, width: '100%' }}>
+      <div style={{ height, width: '100%' }} className="relative z-0">
         <MapContainer
           center={[validCustomer.lat, validCustomer.lng]}
           zoom={14}
-          style={{ height: '100%', width: '100%' }}
+          style={{ height: '100%', width: '100%', zIndex: 0 }}
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'

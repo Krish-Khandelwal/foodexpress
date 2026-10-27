@@ -1,29 +1,24 @@
-# =========================
 # Dependencies
-# =========================
 node_modules/
-package-lock.json # (Optional: Only ignore if using yarn or pnpm instead of npm)
+jspm_packages/
 
-# =========================
 # Environment Variables
-# =========================
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+*.env.development
 
-# =========================
 # Build Outputs (Frontend)
-# =========================
 dist/
 dist-ssr/
 build/
 coverage/
+out/
+.next/
 
-# =========================
 # Logs
-# =========================
 logs
 *.log
 npm-debug.log*
@@ -31,21 +26,17 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# =========================
 # Editor & IDE Files
-# =========================
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 
-# =========================
 # OS Generated Files
-# =========================
 .DS_Store
 .DS_Store?
 ._*
@@ -53,3 +44,23 @@ pnpm-debug.log*
 .Trashes
 ehthumbs.db
 Thumbs.db
+.AppleDouble
+.LSOverride
+desktop.ini
+
+# Testing and Coverage
+coverage/
+.nyc_output/
+
+# TypeScript
+*.tsbuildinfo
+
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
