@@ -58,6 +58,25 @@ const formatEnglishAddress = (rawText, addressObj = {}) => {
   return cleaned || 'New Delhi, Delhi, India';
 };
 
+// Helper: Calculate Menu Items Subtotal, 5% Tax, and Restaurant Owner Amount (Subtotal + 5% Tax)
+const getOwnerOrderAmounts = (order) => {
+  let itemsSubtotal = 0;
+  if (Array.isArray(order?.items) && order.items.length > 0) {
+    itemsSubtotal = order.items.reduce(
+      (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1),
+      0
+    );
+  } else {
+    const rawTotal = Number(order?.totalAmount) || 0;
+    itemsSubtotal = rawTotal > 40 ? Math.round((rawTotal - 40) / 1.05) : rawTotal;
+  }
+
+  const taxAmount = Math.round(itemsSubtotal * 0.05);
+  const ownerTotal = itemsSubtotal + taxAmount;
+
+  return { itemsSubtotal, taxAmount, ownerTotal };
+};
+
 const RecenterMap = ({ position }) => {
   const map = useMap();
   useEffect(() => {
@@ -380,114 +399,122 @@ const ShopDashboard = () => {
             No orders received yet.
           </div>
         ) : (
-          orders.map((order) => (
-            <div
-              key={order._id}
-              className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4"
-            >
-              <div className="flex flex-wrap justify-between items-start gap-2 border-b border-gray-100 pb-3">
-                <div>
-                  <span className="text-xs font-mono font-bold text-gray-400">
-                    ORDER #{order._id.slice(-6).toUpperCase()}
-                  </span>
-                  <h3 className="font-bold text-gray-900">
-                    Customer: {order.customer?.name || 'Customer'} (
-                    {order.customer?.phone || 'N/A'})
-                  </h3>
-                  <p className="text-xs text-gray-500">
-                    {formatEnglishAddress(order.deliveryAddress)}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span
-                    className={`inline-block px-3 py-1 rounded-full text-xs font-extrabold uppercase ${
-                      order.status === 'delivered'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : order.status === 'cancelled'
-                        ? 'bg-red-100 text-red-800'
-                        : 'bg-orange-100 text-orange-800'
-                    }`}
-                  >
-                    {order.status}
-                  </span>
-                  <p className="text-lg font-black text-gray-900 mt-1">
-                    ₹{order.totalAmount}
-                  </p>
-                </div>
-              </div>
+          orders.map((order) => {
+            const { itemsSubtotal, taxAmount, ownerTotal } =
+              getOwnerOrderAmounts(order);
 
-              {/* Items */}
-              <div className="space-y-1 text-sm">
-                {order.items.map((item, idx) => (
-                  <div key={idx} className="flex justify-between text-gray-700">
-                    <span>
-                      {item.quantity}x {item.name}
+            return (
+              <div
+                key={order._id}
+                className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4"
+              >
+                <div className="flex flex-wrap justify-between items-start gap-2 border-b border-gray-100 pb-3">
+                  <div>
+                    <span className="text-xs font-mono font-bold text-gray-400">
+                      ORDER #{order._id.slice(-6).toUpperCase()}
                     </span>
-                    <span className="font-semibold">
-                      ₹{item.price * item.quantity}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Customer Food Quality Rating if rated */}
-              {order.rating && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs">
-                  <span className="font-bold text-amber-800">
-                    Customer Food Rating: {'★'.repeat(order.rating)} ({order.rating}/5)
-                  </span>
-                  {order.review && (
-                    <p className="text-gray-700 mt-1 italic">
-                      &ldquo;{order.review}&rdquo;
+                    <h3 className="font-bold text-gray-900">
+                      Customer: {order.customer?.name || 'Customer'} (
+                      {order.customer?.phone || 'N/A'})
+                    </h3>
+                    <p className="text-xs text-gray-500">
+                      {formatEnglishAddress(order.deliveryAddress)}
                     </p>
-                  )}
-                </div>
-              )}
-
-              {/* Status Controls + Restaurant Pickup Code for Delivery Rider */}
-              {order.status !== 'delivered' && order.status !== 'cancelled' && (
-                <div className="pt-3 border-t border-gray-100 flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => handleOrderStatus(order._id, 'preparing')}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer ${
-                        order.status === 'preparing'
-                          ? 'bg-amber-600 text-white'
-                          : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                      }`}
-                    >
-                      Mark Preparing
-                    </button>
-                    <button
-                      onClick={() => handleOrderStatus(order._id, 'ready')}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer ${
-                        order.status === 'ready'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                      }`}
-                    >
-                      Mark Ready for Pickup
-                    </button>
                   </div>
-
-                  {/* Restaurant Pickup Code Box on Restaurant Owner Side */}
-                  {order.riderOtp && order.status !== 'out for delivery' && (
-                    <div className="flex items-center gap-3 bg-orange-50 px-4 py-2.5 rounded-xl border-2 border-orange-300">
-                      <KeyRound size={18} className="text-orange-600" />
-                      <div>
-                        <p className="text-[11px] font-bold uppercase text-orange-800">
-                          Restaurant Pickup Code (Give to Rider)
-                        </p>
-                        <p className="font-mono text-lg font-black text-gray-900 tracking-widest">
-                          {order.riderOtp}
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                  <div className="text-right">
+                    <span
+                      className={`inline-block px-3 py-1 rounded-full text-xs font-extrabold uppercase ${
+                        order.status === 'delivered'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : order.status === 'cancelled'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-orange-100 text-orange-800'
+                      }`}
+                    >
+                      {order.status}
+                    </span>
+                    <p className="text-lg font-black text-gray-900 mt-1">
+                      ₹{ownerTotal}
+                    </p>
+                    <p className="text-[11px] font-semibold text-gray-500">
+                      ₹{itemsSubtotal} + ₹{taxAmount} (5% tax)
+                    </p>
+                  </div>
                 </div>
-              )}
-            </div>
-          ))
+
+                {/* Items */}
+                <div className="space-y-1 text-sm">
+                  {order.items.map((item, idx) => (
+                    <div key={idx} className="flex justify-between text-gray-700">
+                      <span>
+                        {item.quantity}x {item.name}
+                      </span>
+                      <span className="font-semibold">
+                        ₹{item.price * item.quantity}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Customer Food Quality Rating if rated */}
+                {order.rating && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs">
+                    <span className="font-bold text-amber-800">
+                      Customer Food Rating: {'★'.repeat(order.rating)} ({order.rating}/5)
+                    </span>
+                    {order.review && (
+                      <p className="text-gray-700 mt-1 italic">
+                        &ldquo;{order.review}&rdquo;
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Status Controls + Restaurant Pickup Code for Delivery Rider */}
+                {order.status !== 'delivered' && order.status !== 'cancelled' && (
+                  <div className="pt-3 border-t border-gray-100 flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => handleOrderStatus(order._id, 'preparing')}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer ${
+                          order.status === 'preparing'
+                            ? 'bg-amber-600 text-white'
+                            : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                        }`}
+                      >
+                        Mark Preparing
+                      </button>
+                      <button
+                        onClick={() => handleOrderStatus(order._id, 'ready')}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer ${
+                          order.status === 'ready'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                        }`}
+                      >
+                        Mark Ready for Pickup
+                      </button>
+                    </div>
+
+                    {/* Restaurant Pickup Code Box on Restaurant Owner Side */}
+                    {order.riderOtp && order.status !== 'out for delivery' && (
+                      <div className="flex items-center gap-3 bg-orange-50 px-4 py-2.5 rounded-xl border-2 border-orange-300">
+                        <KeyRound size={18} className="text-orange-600" />
+                        <div>
+                          <p className="text-[11px] font-bold uppercase text-orange-800">
+                            Restaurant Pickup Code (Give to Rider)
+                          </p>
+                          <p className="font-mono text-lg font-black text-gray-900 tracking-widest">
+                            {order.riderOtp}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
 

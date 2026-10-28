@@ -22,6 +22,23 @@ const cleanEnglishAddress = (text) => {
   return cleaned || 'New Delhi, Delhi, India';
 };
 
+// Helper: Calculate Rider Delivery Fee (₹40) and Menu Items Cost (e.g. ₹100)
+const getRiderOrderAmounts = (order) => {
+  let menuItemCost = 0;
+  if (Array.isArray(order?.items) && order.items.length > 0) {
+    menuItemCost = order.items.reduce(
+      (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1),
+      0
+    );
+  } else {
+    const rawTotal = Number(order?.totalAmount) || 0;
+    menuItemCost = rawTotal > 40 ? Math.round((rawTotal - 40) / 1.05) : rawTotal;
+  }
+
+  const deliveryFee = 40;
+  return { deliveryFee, menuItemCost };
+};
+
 const DeliveryDashboard = () => {
   const { user } = useContext(AuthContext);
   const [orders, setOrders] = useState([]);
@@ -210,6 +227,7 @@ const DeliveryDashboard = () => {
             const isPickedUp = order.status === 'out for delivery';
             const isDelivered = order.status === 'delivered';
             const englishCustomerAddress = cleanEnglishAddress(order.deliveryAddress);
+            const { deliveryFee, menuItemCost } = getRiderOrderAmounts(order);
 
             return (
               <div
@@ -248,7 +266,10 @@ const DeliveryDashboard = () => {
                       {order.status}
                     </span>
                     <p className="text-xl font-black text-gray-900 mt-1">
-                      ₹{order.totalAmount}
+                      ₹{deliveryFee}
+                    </p>
+                    <p className="text-xs font-bold text-gray-500 mt-0.5">
+                      Menu Item Cost: ₹{menuItemCost}
                     </p>
                   </div>
                 </div>
